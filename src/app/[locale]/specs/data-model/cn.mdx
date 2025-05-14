@@ -1,0 +1,103 @@
+export const metadata = {
+  title: '数据模型',
+  description:
+    '记录和消息的一致性数据编码。',
+}
+
+# 数据模型
+
+atproto 中的记录和消息以一致的方式进行存储、传输、编码和认证。核心"数据模型"同时支持二进制(CBOR)和文本(JSON)表示形式。{{ className: 'lead' }}
+
+当数据需要进行认证(签名)、引用(通过内容哈希链接)或高效存储时,它会被编码为简洁二进制对象表示(CBOR)。CBOR 是一个基于 JSON 的 IETF 标准。atproto 数据模型中使用的特定规范化 CBOR 子集被称为 **DAG-CBOR**。所有 DAG-CBOR 数据都是有效的 CBOR,可以用任何 CBOR 库读取。使用正确的规范化规则来编写或严格验证 DAG-CBOR 有时需要额外的配置或特殊的 CBOR 实现。{{ className: 'lead' }}
+
+atproto 的模式定义语言是 [Lexicon](/specs/lexicon)。其他低级数据结构,如 [repository](/specs/repository) 内部结构,不使用 Lexicon 指定,但使用相同的数据模型和编码。
+
+不同的数据片段被称为**节点(nodes)**,当编码为二进制(DAG-CBOR)时会生成一个**块(block)**。节点可以有内部嵌套结构(映射或列表)。节点可以通过字符串 URL 或 URI 相互引用,就像普通的 web 上的 JSON 一样。它们也可以通过哈希进行强引用,称为**链接(link)**。一组链接的节点可以形成更高级的数据结构,如 [Merkle 树](https://en.wikipedia.org/wiki/Merkle_tree)或[有向无环图(DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph)。链接还可以引用任意二进制数据(blobs)。
+
+与 URL 不同,哈希引用(链接)不编码可以找到内容的特定网络位置。位置和访问机制必须通过协议级上下文推断。哈希引用具有"自证"的特性,这意味着返回的数据可以根据链接哈希进行验证。这使得即使来自不受信任的一方,也可以重新分发内容和信任副本。
+
+链接被编码为 [Content Identifiers](https://docs.ipfs.tech/concepts/content-addressing/#identifier-formats) (CIDs),它们同时具有二进制和字符串表示。CIDs 包含一个元数据代码,指示它是链接到节点(DAG-CBOR)还是任意二进制数据。下面描述了在 atproto 中使用 CIDs 的一些额外约束。
+
+在 atproto 中,对象节点通常包含一个字符串字段 `$type`,用于指定其 Lexicon 模式。数据大多是自描述的,可以以与模式无关的方式处理(包括解码和重新编码),但如果没有模式或事先不知道模式,就无法完全验证。
+
+## 与 IPLD 的关系
+
+数据模型的灵感来自 [Interplanetary Linked Data (IPLD)](https://ipld.io/docs/data-model/),这是来自 IPFS 生态系统的哈希链接数据结构规范。
+
+IPLD 指定了一种称为 **DAG-JSON** 的规范化 JSON 编码,但 atproto 在编码 JSON 数据时使用不同的约定。atproto JSON 编码不是为了字节确定性而设计的,当数据需要加密签名或哈希时使用 CBOR 表示。
+
+不使用 IPLD Schema 语言。
+
+## 数据类型
+
+| Lexicon 类型 | IPLD 类型 | JSON                | CBOR                   | 说明                    |
+| ---          | ---       | ---                 | ---                    | ---                     |
+| `null`       | null      | Null                | Special Value (major 7)| |
+| `boolean`    | boolean   | Boolean             | Special Value (major 7)| |
+| `integer`    | integer   | Number              | Integer (majors 0,1)   | 有符号,64位            |
+| `string`     | string    | String              | UTF-8 String (major 3) | Unicode, UTF-8         |
+| -            | float     | Number              | Special (major 7)      | atproto中不允许        |
+| `bytes`      | bytes     | `$bytes` Object     | Byte String (major 2)  | |
+| `cid-link`   | link      | `$link` Object      | CID (tag 42)          | CID                    |
+| `array`      | list      | Array               | Array (major 4)        | |
+| `object`     | map       | Object              | Map (major 5)          | 键总是字符串           |
+| `blob`       | -         | `$type: blob` Object| `$type: blob` Map      | |
+
+`blob` 用于引用文件,如图像。它包含基本元数据,如 MIME 类型和大小(以字节为单位)。
+
+作为确保 Javascript 默认类型兼容性的最佳实践,`integer` 应限制为 53 位精度。请注意,JSON 数字可以有任意数量的位数,但即使不考虑 Javascript,`integer` 也限制为 64 位。
+
+Lexicons 可以在单个字段上包含额外的验证约束。例如,整数可以有最大值和最小值。如果没有访问相关的 Lexicon 模式,就无法验证这些额外约束条件,但有一个概念是在抽象意义上验证自由格式的 JSON 或 CBOR 是否符合 atproto 数据模型。例如,一个 JSON 对象,其中嵌套的 `$bytes` 对象使用布尔值而不是 base64 编码的字符串,可能是有效的 JSON,但在 atproto 数据模型下永远不会有效。
+
+Lexicon 字符串字段可以有与验证相关的额外 `format` 类型信息,但与其他验证约束一样,如果没有 Lexicon 本身,这些信息是不可用的。
+
+以 `$` 开头的数据字段名称保留给数据模型或协议本身使用,在 JSON 和 CBOR 表示中都是如此。例如,`$bytes` 键名(用于 CBOR 和 JSON),`$link` 键(用于 JSON CID 链接),或 `$type`(用于指示记录类型)。实现应忽略未知的 `$` 字段(以允许协议演化)。应用程序、扩展和集成不应使用或单方面定义新的 `$` 字段,以防止协议演化时发生冲突。
+
+### Nullable 和 False-y 值
+
+在 atproto 数据模型中,显式将映射字段设置为 `null` 和完全不包含该字段之间存在语义差异。JSON 和 CBOR 都有相同的区别。
+
+Null 或缺失字段也与"false-y"值不同,如布尔值的 `false`、整数的 `0`、空列表或空对象。
+
+### 为什么不支持 Float?
+
+虽然 CBOR 和 JSON 都原生支持浮点数,但为什么 atproto 要特意禁用它们呢?
+
+IPLD 规范描述了[在内容可寻址世界中使用浮点数时的一些复杂性和尖锐边缘](https://ipld.io/docs/data-model/kinds/#float-kind)。简而言之,反序列化为机器原生格式,然后再重新编码,并不总是一致的。这对于特殊值和边界情况肯定是正确的,但在不太常见的架构上,即使是"正常"的浮点值也可能如此。
+
+未来可能会制定确保浮点数可靠往返编码的规则,但目前我们禁用浮点数。
+
+如果您有一个用例,其中整数无法替代浮点数,我们建议将浮点数编码为字符串甚至字节。这提供了一个安全的默认往返表示。
+
+## `blob` 类型
+
+在 atproto 中,"blobs"(任意文件)的引用有一个一致的格式,可以在不访问任何特定 Lexicon 的情况下检测和处理。也就是说,可以解析节点并提取任何 blob 引用,而无需知道模式。
+
+Blob 节点是具有以下字段的映射:
+
+- `$type` (string, 必需): 固定值为 `blob`。注意这不是有效的 NSID。
+- `ref` (link, 必需): blob 的 CID 引用,multicodec 类型为 `raw`。在 JSON 中,照常编码为 `$link` 对象
+- `mimeType` (string, 必需,非空): blob 的内容类型。如果未知则为 `application/octet-stream`
+- `size` (integer, 必需,正数,非零): blob 的字节长度
+
+还有一个已弃用的旧 blob 格式,一些实际记录中仍包含此格式的 blob 引用:
+
+- `cid` (string, 必需): 字符串格式的 CID,而不是 link 格式
+- `mimeType` (string, 必需,非空): 与上面的 `mimeType` 相同
+
+注意,旧格式没有 `$type`,只能为已知的 Lexicons 解析。实现在遇到旧格式时不应抛出错误,但永远不应写入它们,并且只部分支持它们是可以接受的。
+
+## JSON 表示
+
+atproto 使用自己的 JSON 约定,而不是直接使用 DAG-JSON。主要动机是在 HTTP API 中为 `link` 和 `bytes` 提供更符合习惯和人类可读的表示。DAG-JSON 规范本身提到它主要面向调试和开发环境,我们发现使用 `/` 作为字段键会让开发人员感到困惑。
+
+在 atproto 中使用 JSON 时也不需要或强制规范化(如键排序):只有 DAG-CBOR 用作字节可重现的表示。
+
+大多数核心和复合类型的编码都很直接,只有 `link` 和 `bytes` 需要特殊处理。
+
+### `link`
+
+link 的 JSON 编码是一个具有单个键 `$link` 和字符串编码 CID 作为值的对象。
+
+例如,具有单个类型为 `link` 的字段 `"exampleLink"` 的节点在 JSON 中会这样编码:
+

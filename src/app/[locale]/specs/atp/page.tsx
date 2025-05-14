@@ -6,6 +6,7 @@ export const metadata = {
 
 export default async function HomePage({ params }: any) {
   try {
+    console.log('params', params)
     const Content = (await import(`./${params.locale}.mdx`)).default
     return <Content />
   } catch (error) {

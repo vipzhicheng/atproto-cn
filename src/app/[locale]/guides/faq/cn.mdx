@@ -1,0 +1,56 @@
+export const metadata = {
+  title: 'FAQ',
+  description:
+    '关于 AT 协议的常见问题。',
+}
+
+# FAQ
+
+关于认证传输协议 (AT 协议) 的常见问题解答。有关 Bluesky 的常见问题解答，请访问[此处](https://bsky.social/about/faq)。
+
+## AT 协议是区块链吗？
+
+不是。AT 协议是一种[联邦协议](https://en.wikipedia.org/wiki/Federation_(information_technology))。它不是区块链，也不使用区块链。
+
+## 为什么不使用 ActivityPub？
+
+[ActivityPub](https://en.wikipedia.org/wiki/ActivityPub) 是一种联邦社交网络技术，由 [Mastodon](https://joinmastodon.org/) 推广。
+
+帐户可移植性是我们选择构建单独协议的主要原因。我们认为可移植性至关重要，因为它保护用户免受突然禁令、服务器关闭和策略分歧的影响。我们针对可移植性的解决方案需要[签名数据存储库](/guides/data-repos)和 [DID](/guides/identity)，这两者都不容易改造到 ActivityPub 中。ActivityPub 的迁移工具相对有限；它们需要原始服务器提供重定向，并且无法迁移用户以前的数据。
+
+另一个主要原因是可扩展性。ActivityPub 在很大程度上依赖于在小型到中型节点的大型网络之间传递消息，这可能导致单个节点被流量淹没，并且通常难以提供活动的全局视图。AT 协议使用聚合应用程序来合并来自用户主机上的活动，从而减少总体流量并显着降低单个主机上的负载。
+
+其他较小的差异包括：关于如何处理模式的不同观点、对域名用户名而不是 AP 的双-@ 电子邮件用户名的偏好，以及拥有大规模搜索和算法提要的目标。
+
+## 为什么创建 Lexicon 而不是使用 JSON-LD 或 RDF？
+
+Atproto 跨组织交换数据和 RPC 命令。为了使数据和 RPC 有用，软件需要正确处理由不同团队创建的模式。这是 [Lexicon](/guides/lexicon) 的目的。
+
+我们希望工程师能够放心地使用和创建新模式，并且我们希望开发人员能够享受系统的 DX。Lexicon 帮助我们生成强类型 API，这些 API 对开发人员来说非常熟悉，并且提供了各种运行时正确性检查。
+
+[RDF](https://en.wikipedia.org/wiki/Resource_Description_Framework) 适用于系统共享很少基础设施的极其通用的情况。它在概念上很优雅，但难以使用，通常会添加许多开发人员不理解的语法。JSON-LD 简化了使用 RDF 词汇表的任务，但它通过隐藏底层概念而不是使 RDF 更易读来实现这一点。
+
+我们非常仔细地研究了使用 RDF，但只是不喜欢它提供的开发者体验 (DX) 或工具。
+
+## 什么是“XRPC”，为什么不使用 ___？
+
+[XRPC](/specs/xrpc) 是 HTTP，但添加了一些约定。我们的目标是弃用术语“XRPC”，而只将其称为 ATProto 对 HTTP 的使用。
+
+XRPC 使用 [Lexicon](/guides/lexicon) 来描述 HTTP 调用，并将它们映射到 `/xrpc/{methodId}`。例如，此 API 调用：
+
+```typescript
+await api.com.atproto.repo.listRecords({
+  user: 'alice.com',
+  collection: 'app.bsky.feed.post'
+})
+```
+
+...映射到:
+
+```text
+GET /xrpc/com.atproto.repo.listRecords
+  ?user=alice.com
+  &collection=app.bsky.feed.post
+```
+
+Lexicon 建立了一个共享的方法 ID (`com.atproto.repo.listRecords`) 以及预期的查询参数、输入正文和输出正文。通过使用 Lexicon，我们可以对调用的输入和输出进行运行时检查，并且可以生成类型化的代码，如上面的 API 调用示例所示。

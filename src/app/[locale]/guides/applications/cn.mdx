@@ -1,0 +1,685 @@
+import Link from 'next/link'
+import {FooterCTA} from "@/components/FooterCTA"
+import AppBanner from './app-banner.png'
+import AppLogin from './app-login.png'
+import AppScreenshot from './app-screenshot.png'
+import AppStatusHistory from './app-status-history.png'
+import AppStatusOptions from './app-status-options.png'
+import DiagramEventStream from './diagram-event-stream.png'
+import DiagramInfoFlow from './diagram-info-flow.png'
+import DiagramOauth from './diagram-oauth.png'
+import DiagramOptimisticUpdate from './diagram-optimistic-update.png'
+import DiagramRepo from './diagram-repo.png'
+
+export const metadata = {
+  title: '构建 AT 协议应用程序的快速入门指南',
+  description:
+    '在本指南中，我们将构建一个简单的多用户应用程序，用于发布您当前的“状态”作为表情符号。',
+}
+
+# 构建 AT 协议应用程序的快速入门指南
+
+<Link href="https://github.com/bluesky-social/statusphere-example-app" className="not-prose flex items-center gap-2 bg-blue-100 dark:bg-blue-950 dark:text-white px-4 py-3 text-base rounded-lg hover:underline">
+  <svg viewBox="0 0 20 20" aria-hidden="true" className="h-6 dark:text-white">
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M10 1.667c-4.605 0-8.334 3.823-8.334 8.544 0 3.78 2.385 6.974 5.698 8.106.417.075.573-.182.573-.406 0-.203-.011-.875-.011-1.592-2.093.397-2.635-.522-2.802-1.002-.094-.246-.5-1.005-.854-1.207-.291-.16-.708-.556-.01-.567.656-.01 1.124.62 1.281.876.75 1.292 1.948.93 2.427.705.073-.555.291-.93.531-1.143-1.854-.213-3.791-.95-3.791-4.218 0-.929.322-1.698.854-2.296-.083-.214-.375-1.09.083-2.265 0 0 .698-.224 2.292.876a7.576 7.576 0 0 1 2.083-.288c.709 0 1.417.096 2.084.288 1.593-1.11 2.291-.875 2.291-.875.459 1.174.167 2.05.084 2.263.53.599.854 1.357.854 2.297 0 3.278-1.948 4.005-3.802 4.219.302.266.563.78.563 1.58 0 1.143-.011 2.061-.011 2.35 0 .224.156.491.573.405a8.365 8.365 0 0 0 4.11-3.116 8.707 8.707 0 0 0 1.567-4.99c0-4.721-3.73-8.545-8.334-8.545Z"
+    />
+  </svg>
+  <span>
+    Find the source code for the example application on GitHub.
+  </span>
+</Link>
+
+在本指南中，我们将构建一个简单的多用户应用程序，用于发布您当前的“状态”作为表情符号。我们的应用程序将如下所示：{{className: 'lead'}}
+
+<Image alt="我们的示例应用程序的屏幕截图" src={AppScreenshot} />
+
+我们将介绍如何：{{className: 'lead'}}
+
+- 通过 OAuth 登录 {{className: 'lead'}}
+- 获取有关用户的信息（个人资料） {{className: 'lead'}}
+- 监听网络信息流以获取新数据 {{className: 'lead'}}
+- 使用自定义模式在用户的帐户上发布数据 {{className: 'lead'}}
+
+我们将保持简洁，以便您可以快速了解 ATProto。将提供指向每个步骤的更多信息的链接。{{className: 'lead'}}
+
+## 介绍
+
+Atmosphere 中的数据存储在用户的个人 repo 中。这几乎就像每个用户都有自己的网站。我们的目标是将用户的数据聚合到我们的 SQLite 数据库中。
+
+将我们的应用程序想象成一个 Google。如果 Google 的工作是说每个网站在 `/status.json` 下有哪些表情符号，那么它会显示如下内容：
+
+- `nytimes.com` 根据 `https://nytimes.com/status.json` 的说法，感觉是 📰
+- `bsky.app` 根据 `https://bsky.app/status.json` 的说法，感觉是 🦋
+- `reddit.com` 根据 `https://reddit.com/status.json` 的说法，感觉是 🤓
+
+Atmosphere 的工作方式相同，只是我们将检查 `at://` 而不是 `https://`。每个用户在 `at://` URL 下都有一个数据 repo。我们将爬取 Atmosphere 中所有用户数据 repo 中的所有 "status.json" 记录，并将它们聚合到我们的 SQLite 数据库中。
+
+> `at://` 是 AT 协议的 URL 方案。在底层，它使用 HTTP 和 DNS 等常见技术，但它添加了我们将在本教程中使用的所有功能。
+
+## 第 1 步。从我们的 ExpressJS 应用程序开始
+
+首先克隆 repo 并安装软件包。
+
+
+```bash
+git clone https://github.com/bluesky-social/statusphere-example-app.git
+cd statusphere-example-app
+cp .env.template .env
+npm install
+npm run dev
+# Navigate to http://localhost:8080
+```
+
+我们的 repo 是一个常规的 Web 应用程序。我们像 1999 年那样在服务器端渲染我们的 HTML。我们还有一个 SQLite 数据库，我们正在使用 [Kysely](https://kysely.dev/) 进行管理。
+
+我们的起始堆栈：
+
+- Typescript
+- NodeJS Web 服务器 ([express](https://expressjs.com/))
+- SQLite 数据库 ([Kysely](https://kysely.dev/))
+- 服务器端渲染 ([uhtml](https://www.npmjs.com/package/uhtml))
+
+在每个步骤中，我们将解释我们的 Web 应用程序如何接入 Atmosphere。有关更详细的代码，请参阅代码库 &mdash; 同样，本教程将保持简洁明了。
+
+## 第 2 步。使用 OAuth 登录
+
+当有人登录我们的应用程序时，他们将授予我们对其个人 `at://` repo 的读取和写入权限。我们将使用它来写入状态 json 记录。
+
+我们将使用 OAuth ([spec](https://github.com/bluesky-social/proposals/tree/main/0004-oauth)) 来完成此操作。大多数 OAuth 流程将使用 [@atproto/oauth-client-node](https://github.com/bluesky-social/atproto/tree/main/packages/oauth/oauth-client-node) 库为我们处理。这是我们追求的安排：
+
+<Image alt="OAuth 元素的示意图" src={DiagramOauth} />
+
+当用户登录时，OAuth 客户端将与他们的 repo 服务器创建一个新会话，并为我们提供读/写访问权限以及基本用户信息。
+
+<Image alt="登录用户界面的屏幕截图" src={AppLogin} />
+
+我们的登录页面只是要求用户提供他们的“handle”，这是与其帐户关联的域名。对于 [Bluesky](https://bsky.app) 用户，这些域名通常看起来像 `alice.bsky.social`，但它们可以是任何类型的域名（例如 `alice.com`）。
+
+```html
+<!-- src/pages/login.ts -->
+<form action="/login" method="post" class="login-form">
+  <input
+    type="text"
+    name="handle"
+    placeholder="Enter your handle (eg alice.bsky.social)"
+    required
+  />
+  <button type="submit">Log in</button>
+</form>
+```
+
+当他们提交表单时，我们会告诉 OAuth 客户端启动授权流程，然后将用户重定向到他们的服务器以完成该过程。
+
+
+```typescript
+/** src/routes.ts **/
+// Login handler
+router.post(
+  '/login',
+  handler(async (req, res) => {
+    // Initiate the OAuth flow
+    const handle = req.body?.handle
+    const url = await oauthClient.authorize(handle, {
+      scope: 'atproto transition:generic',
+    })
+    return res.redirect(url.toString())
+  })
+)
+```
+
+这是与 Google 或 GitHub 使用的相同类型的 SSO 流程。系统会要求用户输入密码，然后要求确认与您的应用程序的会话。
+
+完成后，用户将被发送回我们的 Web 应用程序上的 `/oauth/callback`。OAuth 客户端将存储用户服务器的访问令牌，然后我们将他们帐户的 [DID](https://atproto.com/specs/did) 附加到 cookie 会话。
+
+```typescript
+/** src/routes.ts **/
+// OAuth callback to complete session creation
+router.get(
+  '/oauth/callback',
+  handler(async (req, res) => {
+    // Store the credentials
+    const { session } = await oauthClient.callback(params)
+
+    // Attach the account DID to our user via a cookie
+    const cookieSession = await getIronSession(req, res)
+    cookieSession.did = session.did
+    await cookieSession.save()
+
+    // Send them back to the app
+    return res.redirect('/')
+  })
+)
+```
+
+有了这个，我们就可以开始工作了！我们现在与用户的 repo 服务器建立了一个会话，可以使用它来访问他们的数据。
+
+## 第 3 步。获取用户的个人资料
+
+我们为什么不了解一下我们的用户呢？在 [Bluesky](https://bsky.app) 中，用户发布一个“profile”记录，如下所示：
+
+
+```typescript
+interface ProfileRecord {
+  displayName?: string // a human friendly name
+  description?: string // a short bio
+  avatar?: BlobRef     // small profile picture
+  banner?: BlobRef     // banner image to put on profiles
+  createdAt?: string   // declared time this profile data was added
+  // ...
+}
+```
+
+您可以使用 [atproto-browser.vercel.app](https://atproto-browser.vercel.app) 直接检查此记录。例如，[这是 @bsky.app 的 profile 记录](https://atproto-browser.vercel.app/at?u=at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.actor.profile/self)。
+
+我们将使用与用户的 OAuth 会话关联的 [Agent](https://github.com/bluesky-social/atproto/tree/main/packages/api) 来获取此记录。
+
+
+```typescript
+await agent.com.atproto.repo.getRecord({
+  repo: agent.assertDid,                // The user
+  collection: 'app.bsky.actor.profile', // The collection
+  rkey: 'self',                         // The record key
+})
+```
+
+在请求记录时，我们需要提供三个信息。
+
+- **repo** 用于标识用户的 [DID](https://atproto.com/specs/did)，
+- **collection** 集合名称，以及
+- **rkey** 记录键
+
+我们稍后会解释集合名称。记录键是具有[一些限制](https://atproto.com/specs/record-key#record-key-syntax)的字符串和一些常见的模式。当集合预计仅包含一个描述用户的记录时，使用 `"self"` 模式。
+
+让我们更新我们的主页以获取此个人资料记录：
+
+```typescript
+/** src/routes.ts **/
+// Homepage
+router.get(
+  '/',
+  handler(async (req, res) => {
+    // If the user is signed in, get an agent which communicates with their server
+    const agent = await getSessionAgent(req, res, ctx)
+
+    if (!agent) {
+      // Serve the logged-out view
+      return res.type('html').send(page(home()))
+    }
+
+    // Fetch additional information about the logged-in user
+    const { data: profileRecord } = await agent.com.atproto.repo.getRecord({
+      repo: agent.assertDid,                // our user's repo
+      collection: 'app.bsky.actor.profile', // the bluesky profile record type
+      rkey: 'self',                         // the record's key
+    })
+
+    // Serve the logged-in view
+    return res
+      .type('html')
+      .send(page(home({ profile: profileRecord.value || {} })))
+  })
+)
+```
+
+With that data, we can give a nice personalized welcome banner for our user:
+
+<Image alt="A screenshot of the banner image" src={AppBanner} />
+
+```html
+<!-- pages/home.ts -->
+<div class="card">
+  ${profile
+    ? html`<form action="/logout" method="post" class="session-form">
+        <div>
+          Hi, <strong>${profile.displayName || 'friend'}</strong>.
+          What's your status today?
+        </div>
+        <div>
+          <button type="submit">Log out</button>
+        </div>
+      </form>`
+    : html`<div class="session-form">
+        <div><a href="/login">Log in</a> to set your status!</div>
+        <div>
+          <a href="/login" class="button">Log in</a>
+        </div>
+      </div>`}
+</div>
+```
+
+## 第 4 步。读取和写入记录
+
+您可以将用户存储库视为 JSON 记录的集合：
+
+<Image alt="存储库的示意图" src={DiagramRepo} />
+
+让我们再次看看我们如何读取“profile”记录：
+
+```typescript
+await agent.com.atproto.repo.getRecord({
+  repo: agent.assertDid,                // The user
+  collection: 'app.bsky.actor.profile', // The collection
+  rkey: 'self',                         // The record key
+})
+```
+
+我们使用类似的 API 写入记录。由于我们的目标是写入“状态”记录，让我们看看它是如何发生的：
+
+
+```typescript
+// Generate a time-based key for our record
+const rkey = TID.nextStr()
+
+// Write the
+await agent.com.atproto.repo.putRecord({
+  repo: agent.assertDid,                 // The user
+  collection: 'xyz.statusphere.status',  // The collection
+  rkey,                                  // The record key
+  record: {                              // The record value
+    status: "👍",
+    createdAt: new Date().toISOString()
+  }
+})
+```
+
+我们的 `POST /status` 路由将使用此 API 将用户的状态发布到他们的 repo。
+
+```typescript
+/** src/routes.ts **/
+// "Set status" handler
+router.post(
+  '/status',
+  handler(async (req, res) => {
+    // If the user is signed in, get an agent which communicates with their server
+    const agent = await getSessionAgent(req, res, ctx)
+    if (!agent) {
+      return res.status(401).type('html').send('<h1>Error: Session required</h1>')
+    }
+
+    // Construct their status record
+    const record = {
+      $type: 'xyz.statusphere.status',
+      status: req.body?.status,
+      createdAt: new Date().toISOString(),
+    }
+
+    try {
+      // Write the status record to the user's repository
+      await agent.com.atproto.putRecord({
+        repo: agent.assertDid,
+        collection: 'xyz.statusphere.status',
+        rkey: TID.nextStr(),
+        record,
+      })
+    } catch (err) {
+      logger.warn({ err }, 'failed to write record')
+      return res.status(500).type('html').send('<h1>Error: Failed to write record</h1>')
+    }
+
+    res.status(200).json({})
+  })
+)
+```
+
+现在，在我们的主页中，我们可以列出状态按钮：
+
+```html
+<!-- src/pages/home.ts -->
+<form action="/status" method="post" class="status-options">
+  ${STATUS_OPTIONS.map(status => html`
+    <button class="status-option" name="status" value="${status}">
+      ${status}
+    </button>
+  `)}
+</form>
+```
+
+And here we are!
+
+<Image alt="A screenshot of the app's status options" src={AppStatusOptions} />
+
+## 第 5 步。创建自定义“状态”模式
+
+Repo 集合是类型化的，这意味着它们具有定义的模式。`app.bsky.actor.profile` 类型定义[可以在这里找到](https://github.com/bluesky-social/atproto/blob/main/lexicons/app/bsky/actor/profile.json)。
+
+任何人都可以使用 [Lexicon](https://atproto.com/specs/lexicon) 语言创建一个新模式，该语言与 [JSON-Schema](http://json-schema.org/) 非常相似。这些模式使用 [反向 DNS ID](https://atproto.com/specs/nsid)，用于指示所有权。在此演示应用程序中，我们将使用专门为此项目注册的 `xyz.statusphere`（又名 statusphere.xyz）。
+
+> ### 为什么要创建模式？
+>
+> 模式可以帮助其他应用程序理解您的应用程序正在创建的数据。通过发布您的模式，您可以使其他应用程序作者更容易以您的应用程序可以识别和处理的格式发布数据。
+
+让我们在代码库的 `/lexicons` 文件夹中创建我们的模式。您可以[在此处阅读有关如何定义模式的更多信息](https://atproto.com/guides/lexicon)。
+
+
+```json
+/** lexicons/status.json **/
+{
+  "lexicon": 1,
+  "id": "xyz.statusphere.status",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["status", "createdAt"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "minLength": 1,
+            "maxGraphemes": 1,
+            "maxLength": 32
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+现在让我们使用我们的模式运行一些代码生成：
+
+```bash
+./node_modules/.bin/lex gen-server ./src/lexicon ./lexicons/*
+```
+
+这将生成 Typescript 接口以及运行时验证函数，我们可以在我们的应用程序中使用。以下是生成的代码的样子：
+
+
+```typescript
+/** src/lexicon/types/xyz/statusphere/status.ts **/
+export interface Record {
+  status: string
+  createdAt: string
+  [k: string]: unknown
+}
+
+export function isRecord(v: unknown): v is Record {
+  return (
+    isObj(v) &&
+    hasProp(v, '$type') &&
+    (v.$type === 'xyz.statusphere.status#main' || v.$type === 'xyz.statusphere.status')
+  )
+}
+
+export function validateRecord(v: unknown): ValidationResult {
+  return lexicons.validate('xyz.statusphere.status#main', v)
+}
+```
+
+让我们使用该代码来改进 `POST /status` 路由：
+
+```typescript
+/** src/routes.ts **/
+import * as Status from '#/lexicon/types/xyz/statusphere/status'
+// ...
+// "Set status" handler
+router.post(
+  '/status',
+  handler(async (req, res) => {
+    // ...
+
+    // Construct & validate their status record
+    const record = {
+      $type: 'xyz.statusphere.status',
+      status: req.body?.status,
+      createdAt: new Date().toISOString(),
+    }
+    if (!Status.validateRecord(record).success) {
+      return res.status(400).json({ error: 'Invalid status' })
+    }
+
+    // ...
+  })
+)
+```
+
+## 第 6 步。监听信息流
+
+到目前为止，我们已经：
+
+- 通过 OAuth 登录
+- 创建了自定义模式
+- 读取和写入了已登录用户的记录
+
+现在我们要从其他用户那里获取状态记录。
+
+还记得我们如何将我们的应用程序称为像 Google 一样，在 repo 周围爬行以获取他们的记录吗？我们在 AT 协议中的一个优势是每个 repo 都发布了其更新的事件日志。
+
+<Image alt="事件流的示意图" src={DiagramEventStream} />
+
+使用 [Relay 服务](https://docs.bsky.app/docs/advanced-guides/federation-architecture#relay)，我们可以监听网络中所有用户的这些事件的聚合信息流。在我们的例子中，我们正在寻找有效的 `xyz.statusphere.status` 记录。
+
+```typescript
+/** src/ingester.ts **/
+import { Firehose } from '@atproto/sync'
+import * as Status from '#/lexicon/types/xyz/statusphere/status'
+// ...
+
+new Firehose({
+  filterCollections: ['xyz.statusphere.status'],
+  handleEvent: async (evt) => {
+    // Watch for write events
+    if (evt.event === 'create' || evt.event === 'update') {
+      const record = evt.record
+
+      // If the write is a valid status update
+      if (
+        evt.collection === 'xyz.statusphere.status' &&
+        Status.isRecord(record) &&
+        Status.validateRecord(record).success
+      ) {
+        // Store the status
+        // TODO
+      }
+    }
+  },
+})
+```
+
+让我们创建一个 SQLite 表来存储这些状态：
+
+```typescript
+/** src/db.ts **/
+// Create our statuses table
+await db.schema
+  .createTable('status')
+  .addColumn('uri', 'varchar', (col) => col.primaryKey())
+  .addColumn('authorDid', 'varchar', (col) => col.notNull())
+  .addColumn('status', 'varchar', (col) => col.notNull())
+  .addColumn('createdAt', 'varchar', (col) => col.notNull())
+  .addColumn('indexedAt', 'varchar', (col) => col.notNull())
+  .execute()
+```
+
+现在我们可以将这些状态从信息流中获取时写入到我们的数据库中：
+
+```typescript
+/** src/ingester.ts **/
+// If the write is a valid status update
+if (
+  evt.collection === 'xyz.statusphere.status' &&
+  Status.isRecord(record) &&
+  Status.validateRecord(record).success
+) {
+  // Store the status in our SQLite
+  await db
+    .insertInto('status')
+    .values({
+      uri: evt.uri.toString(),
+      authorDid: evt.author,
+      status: record.status,
+      createdAt: record.createdAt,
+      indexedAt: new Date().toISOString(),
+    })
+    .onConflict((oc) =>
+      oc.column('uri').doUpdateSet({
+        status: record.status,
+        indexedAt: new Date().toISOString(),
+      })
+    )
+    .execute()
+}
+```
+
+您可以将信息流视为一个循环：
+
+<Image alt="信息流的示意图" src={DiagramInfoFlow} />
+
+应用程序写入 repo。然后，写入事件在 firehose 上发出，应用程序捕获这些事件并将其提取到其数据库中。
+
+为什么要像这样从事件日志同步？因为网络中还有其他应用程序会写入我们感兴趣的记录。通过订阅事件日志，我们可以确保捕获所有我们感兴趣的数据 &mdash; 包括其他应用程序发布的数据！
+
+## 第 7 步。列出最新状态
+
+现在我们已经使用状态填充了我们的 SQLite，我们可以生成用户状态更新的时间线。我们还使用 [DID](https://atproto.com/specs/did) 到句柄解析器，以便我们可以显示带有状态的用户名：
+
+```typescript
+/** src/routes.ts **/
+// Homepage
+router.get(
+  '/',
+  handler(async (req, res) => {
+    // ...
+
+    // Fetch data stored in our SQLite
+    const statuses = await db
+      .selectFrom('status')
+      .selectAll()
+      .orderBy('indexedAt', 'desc')
+      .limit(10)
+      .execute()
+
+    // Map user DIDs to their domain-name handles
+    const didHandleMap = await resolver.resolveDidsToHandles(
+      statuses.map((s) => s.authorDid)
+    )
+
+    // ...
+  })
+)
+```
+
+我们的 HTML 现在可以列出这些状态记录：
+
+```html
+<!-- src/pages/home.ts -->
+${statuses.map((status, i) => {
+  const handle = didHandleMap[status.authorDid] || status.authorDid
+  return html`
+    <div class="status-line">
+      <div>
+        <div class="status">${status.status}</div>
+      </div>
+      <div class="desc">
+        <a class="author" href="https://bsky.app/profile/${handle}">@${handle}</a>
+        was feeling ${status.status} on ${status.indexedAt}.
+      </div>
+    </div>
+  `
+})}
+```
+
+<Image alt="A screenshot of the app status timeline" src={AppStatusHistory} />
+
+## 第 8 步。乐观更新
+
+作为最后的优化，让我们引入“乐观更新”。
+
+还记得 repo 写入和事件日志的信息流循环吗？
+
+<Image alt="信息流的示意图" src={DiagramInfoFlow} />
+
+由于我们正在本地更新用户的 repo，我们可以将该流程短路到我们自己的数据库：
+
+<Image alt="图示乐观更新的示意图" src={DiagramOptimisticUpdate} />
+
+这是一个重要的优化，因为它确保用户在使用您的应用程序时看到他们自己的更改。当事件最终从 firehose 到达时，我们只需将其丢弃，因为我们已经将其保存在本地。
+
+为此，我们只需更新 `POST /status` 以包含对我们的 SQLite 数据库的额外写入：
+
+
+```typescript
+/** src/routes.ts **/
+// "Set status" handler
+router.post(
+  '/status',
+  handler(async (req, res) => {
+    // ...
+
+    let uri
+    try {
+      // Write the status record to the user's repository
+      const res = await agent.com.atproto.repo.putRecord({
+        repo: agent.assertDid,
+        collection: 'xyz.statusphere.status',
+        rkey: TID.nextStr(),
+        record,
+      })
+      uri = res.uri
+    } catch (err) {
+      logger.warn({ err }, 'failed to write record')
+      return res.status(500).json({ error: 'Failed to write record' })
+    }
+
+    try {
+      // Optimistically update our SQLite <-- HERE!
+      await db
+        .insertInto('status')
+        .values({
+          uri,
+          authorDid: agent.assertDid,
+          status: record.status,
+          createdAt: record.createdAt,
+          indexedAt: new Date().toISOString(),
+        })
+        .execute()
+    } catch (err) {
+      logger.warn(
+        { err },
+        'failed to update computed view; ignoring as it should be caught by the firehose'
+      )
+    }
+
+    res.status(200).json({})
+  })
+)
+```
+
+您会注意到，此代码与我们在 `ingester.ts` 中所做的几乎完全相同。
+
+## AT 协议的设计思路
+
+在本教程中，我们介绍了构建 atproto 应用的关键步骤。数据以规范形式发布在用户的 `at://` 存储库中，然后聚合到应用的数据库中，以生成网络的视图。
+
+在构建应用时，请考虑以下四个关键步骤：
+
+- 为您将发布到 Atmosphere 中的记录设计 [Lexicon](#) 模式。
+- 创建一个数据库，用于将记录聚合为有用的视图。
+- 构建您的应用程序以在用户的存储库上写入记录。
+- 监听 firehose 以聚合整个网络的数据。
+
+请记住整个过程中的信息流：
+
+<Image alt="信息流的示意图" src={DiagramInfoFlow} />
+
+这是 Atmosphere 中每个应用程序的工作方式，包括 [Bluesky 社交应用](https://bsky.app)。
+
+## 后续步骤
+
+如果您想练习所学的知识，可以尝试以下其他挑战：
+
+- 同步所有用户的个人资料记录，以便显示他们的显示名称而不是句柄。
+- 统计使用的每种状态的数量，并显示总计数。
+- 获取已验证用户的 `app.bsky.graph.follow` 关注者，并显示他们的状态。
+- 创建一种不同的模式，例如发布网站链接并将其评为 1 到 4 星的方式。
+
+<FooterCTA href="/" title="Ready to learn more?" description="Specs, guides, and SDKs can be found here." />

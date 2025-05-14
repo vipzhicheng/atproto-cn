@@ -1,0 +1,52 @@
+export const metadata = {
+  title: 'AT Protocol',
+  description:
+    '认证传输协议（AT Protocol）规范',
+}
+
+# AT Protocol
+
+AT Protocol（认证传输协议，简称 atproto）是一个用于构建开放社交媒体应用的通用联邦协议。其主要特点和功能包括：{{ className: 'lead' }}
+
+- 自验证的数据和身份，支持无缝的账户迁移和内容再分发 {{ className: 'lead' }}
+- 为"大世界"用例设计，可扩展至数十亿账户规模 {{ className: 'lead' }}
+- 应用层 schema 和聚合基础设施的授权委托 {{ className: 'lead' }}
+- 复用来自 dweb 协议族的数据模型和 web 平台的网络原语 {{ className: 'lead' }}
+
+## 协议结构
+
+**身份：** 账户控制基于稳定的 [DID](/specs/did) 标识符，可以快速解析以确定当前服务提供商位置和与账户关联的[加密密钥](/specs/cryptography)。[Handle](/specs/handle) 为账户提供更易读和可变的标识符。
+
+**数据：** 公开内容存储在内容寻址和加密可验证的 [Repository](/specs/repository) 中。数据记录和网络消息都遵循统一的[数据模型](/specs/data-model)（支持 [CBOR](https://en.wikipedia.org/wiki/CBOR) 和 JSON 表示）。[Label](/specs/label) 是一种独立的轻量级元数据形式，单独签名并在 repository 外分发。
+
+**网络：** HTTP 客户端-服务器和服务器-服务器 [API](/specs/xrpc) 通过 Lexicon 描述，[事件流](/specs/event-stream) WebSocket 也是如此。单个记录可以通过 [AT URI](/specs/at-uri-scheme) 在网络中被引用。个人数据服务器（Personal Data Server，PDS）作为账户在网络中的可信代理，负责路由客户端网络请求和托管 repository。Relay 爬取多个 repository 并输出统一的事件 [Firehose](/specs/sync)。
+
+**应用：** 构建在 atproto 上的应用的 API 和记录 schema 在 [Lexicon](/specs/lexicon) 中指定，通过 [命名空间标识符](/specs/nsid)（NSID）引用。应用特定的聚合（如搜索）由应用视图（App View）服务提供。客户端可以包括移动应用、桌面软件或 web 界面。
+
+AT Protocol 本身不指定常见的社交媒体约定（如关注或头像），而是将这些留给应用层 Lexicon。`com.atproto.*` Lexicon 提供了账户注册和登录等常见 API。这些可以被视为 AT Protocol 的一部分，但也可以根据需要随时扩展或替换。Bluesky 是基于 AT Protocol 构建的微博客社交应用，其 lexicon 位于 `app.bsky.*` 命名空间下。
+
+虽然 atproto 借鉴了 IPFS 生态系统的多个格式和规范（如 [IPLD](https://ipld.io/) 和 [CID](https://github.com/multiformats/cid)），但 atproto 数据不需要存储在 IPFS 网络中，且 atproto 参考实现完全不使用 IPFS 网络。
+
+## 协议扩展和应用
+
+AT Protocol 从一开始就被设计为在稳定性和互操作性与第三方应用开发灵活性之间取得平衡。
+
+核心协议扩展机制是在独立命名空间下开发新的 Lexicon。Lexicon 可以声明新的 repository 记录 schema（通过 NSID 存储在集合中）、新的 HTTP API 端点，以及新的事件流端点和消息类型。预期新应用可能需要新的网络聚合服务（"AppView"）和客户端应用（如移动应用或 web 界面）。
+
+第三方可以跨命名空间重用 Lexicon 和记录数据。例如，新应用欢迎基于 `app.bsky.*` Lexicon 中指定的社交图谱记录构建，只要它们符合 `bsky.app` 权限控制的 schema。
+
+个别 Lexicon 命名空间的治理结构是灵活的。它们可以由志愿者社区、公司、联盟、学术研究人员、资助的非营利组织等开发和维护。
+
+## 缺失的部分
+
+这些规范涵盖了 Bluesky 参考实现中的大部分细节。一些重要部分在参考实现和这些规范中尚未最终确定。
+
+**审核原语：** 用于处理审核报告和进行基础设施级别下架的 `com.atproto.admin.*` 路由在 Lexicon 中已指定，但应该更详细地描述。
+
+## 未来工作
+
+较小的变更在各个规范文档中描述，但一些大的变更跨越整个协议。
+
+**非公开内容：** 私人群组和一对一通信机制将是协议开发的第二阶段。这包括"私密账户"、私信、加密数据等原语。我们不建议简单地使用现有协议原语来"附加"加密或私密内容。
+
+**协议治理和正式标准流程：** 目前的开发重点是通过参考实现演示所有核心协议功能，包括开放联邦。在达到这个里程碑后，计划稳定底层协议，并通过 IETF 或 W3C 等标准组织提交规范进行独立审查和修订。

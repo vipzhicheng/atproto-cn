@@ -1,0 +1,158 @@
+export const metadata = {
+  title: 'PDS 自托管',
+  description:
+    '自托管 Bluesky PDS 意味着运行你自己的 Personal Data Server（个人数据服务器），它能够与更广泛的 ATProto 网络进行联邦。',
+}
+
+# PDS 自托管
+
+自托管 Bluesky PDS 意味着运行你自己的 Personal Data Server（个人数据服务器），它能够与更广泛的 ATProto 网络进行联邦。{{className: 'lead'}}
+
+
+## PDS 自托管准备
+
+在任意云服务商上启动一台服务器，[Digital Ocean](https://digitalocean.com/) 和 [Vultr](https://vultr.com/) 是两个常用选择。
+
+确保你可以通过 ssh 连接到服务器并拥有 root 权限。
+
+**服务器要求**
+* 公网 IPv4 地址
+* 公网 DNS 名称
+* 允许 80/tcp 和 443/tcp 端口的公网入站访问
+
+**服务器推荐配置**
+|                  |              |
+| ---------------- | ------------ |
+| 操作系统         | Ubuntu 22.04 |
+| 内存 (RAM)       | 1 GB         |
+| CPU 核心数       | 1            |
+| 存储             | 20 GB SSD    |
+| 架构             | amd64, arm64 |
+| 用户数量         | 1-20         |
+
+**注意：** 出于安全考虑，建议将 ssh 入站访问（22/tcp 端口）限制为你自己电脑的公网 IP。你可以通过 [ifconfig.me](https://ifconfig.me/) 查询当前公网 IP。
+
+## 为 HTTP 和 HTTPS 打开云防火墙
+
+最常见的配置错误之一是没有正确打开防火墙端口。请务必仔细检查此步骤。
+
+在你的云服务商控制台中，以下端口应对公网开放：
+
+* 80/tcp（仅用于 TLS 证书验证）
+* 443/tcp（用于所有应用请求）
+
+**注意：** 无需自行配置 TLS 或将 80 端口请求重定向到 443，因为 Docker compose 文件中包含的 Caddy Web 服务器会自动处理这些。
+
+## 为你的域名配置 DNS
+
+在 DNS 服务商控制台中，为你的服务器设置域名解析记录。
+
+| 名称            | 类型 | 值           | TTL |
+| --------------- | ---- | ------------ | --- |
+| `example.com`   | `A`  | `12.34.56.78`| 600 |
+| `*.example.com` | `A`  | `12.34.56.78`| 600 |
+
+**注意：**
+* 将 `example.com` 替换为你的域名。
+* 将 `12.34.56.78` 替换为你的服务器 IP。
+* 有些服务商用 `@` 表示域名根。
+* 如果允许用户在你的 PDS 上创建新账号，必须添加通配符记录。
+* TTL 可自定义，600（10 分钟）较为合理。
+
+## 检查 DNS 是否按预期工作
+
+使用 [DNS Checker](https://dnschecker.org/) 等服务，验证域名解析是否生效。
+
+建议检查（记录类型 `A`）：
+* `example.com`
+* `random.example.com`
+* `test123.example.com`
+
+这些都应返回你的服务器公网 IP。
+
+## 在 Ubuntu 20.04/22.04 和 Debian 11/12 上安装
+
+通过 ssh 登录服务器，使用 wget 下载安装脚本：
+
+```bash
+wget https://raw.githubusercontent.com/bluesky-social/pds/main/installer.sh
+```
+
+或者使用 curl 下载：
+
+```bash
+curl https://raw.githubusercontent.com/bluesky-social/pds/main/installer.sh >installer.sh
+```
+
+然后使用 bash 运行安装脚本：
+
+```bash
+sudo bash installer.sh
+```
+
+## 验证你的 PDS 是否在线可访问
+
+<Note>
+在让 PDS 内容被实时网络消费时，最常见的问题是用户用 nginx、apache 或类似的反向代理替换了默认的 Caddy 配置。正确配置 TLS 证书、WebSocket 和虚拟主机名都比较棘手。目前我们不为其他配置方式提供技术支持。
+</Note>
+
+你可以通过请求健康检查接口，检查你的服务器是否在线且运行正常。
+
+你可以在浏览器中访问 `https://example.com/xrpc/_health`。你应该会看到一个包含版本号的 JSON 响应，例如：
+
+```
+{"version":"0.2.2-beta.2"}
+```
+
+你还需要检查 WebSocket 是否正常工作，以便网络的其他部分能够从你的 PDS 获取内容。你可以通过安装类似 `wsdump` 的工具并运行如下命令进行测试：
+
+
+```bash
+wsdump "wss://example.com/xrpc/com.atproto.sync.subscribeRepos?cursor=0"
+```
+请注意，只有当 PDS 中实际产生事件时，WebSocket 才会输出事件。因此，如果一切配置正常，上述命令可能会持续运行且无输出。
+
+## 使用 pdsadmin 创建账号
+
+通过 ssh 登录你的服务器，如果还没有账号，可以使用 `pdsadmin` 创建账号。
+
+
+```bash
+sudo pdsadmin account create
+```
+
+## 使用邀请码创建账号
+
+通过 ssh 登录你的服务器，使用 `pdsadmin` 创建邀请码。
+
+```bash
+sudo pdsadmin create-invite-code
+```
+
+在使用应用程序创建账号时，输入此邀请码。
+
+## 使用 Bluesky 应用连接你的 PDS
+
+你可以使用 Bluesky 应用连接到你的 PDS。
+
+1. 获取 Bluesky 应用
+  * [网页版 Bluesky](https://bsky.app/)
+  * [iPhone 版 Bluesky](https://apps.apple.com/us/app/bluesky-social/id6444370199)
+  * [Android 版 Bluesky](https://play.google.com/store/apps/details?id=xyz.blueskyweb.app)
+1. 输入你的 PDS 地址（例如 `https://example.com/`）
+
+_注意：由于子域名的 TLS 证书是按需创建的，你的 handle 可能需要 10-30 秒才能访问。如果你没有看到你的第一条帖子/个人资料，请等待 30 秒后再尝试发帖。_
+
+## 更新你的 PDS
+
+建议你及时将 PDS 升级到新版本，否则可能会出现故障。你可以使用 `pdsadmin` 工具来更新你的 PDS。
+
+```bash
+sudo pdsadmin update
+```
+
+## 获取帮助
+
+- [访问 GitHub](https://github.com/bluesky-social/pds) 以获取问题反馈和讨论。
+- [加入 AT Protocol PDS Admins Discord](https://discord.gg/e7hpHxRfBP)，与其他实例托管者交流，并获取关于 PDS 分发的重要更新。
+

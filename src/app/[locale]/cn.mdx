@@ -1,0 +1,141 @@
+import { Guides } from '@/components/Guides'
+import { Specs } from '@/components/Specs'
+import { HeroPattern } from '@/components/HeroPattern'
+import { Firehose } from '@/components/Firehose'
+import { CodeCard } from '@/components/CodeCard'
+import { ImageCard } from '@/components/ImageCard'
+import { ArticleSummary, ArticleSummarySmall } from '@/components/ArticleSummary'
+import { UserIcon } from '@/components/icons/UserIcon'
+import WebWithoutWallsPng from '@/images/media/web-without-walls.png'
+import DotMediaInterviewPng from '@/images/media/dotmedia-interview.png'
+import WhitepaperPng from '@/images/media/whitepaper.png'
+import HowDoesBlueskyWorkBlogpostPng from '@/images/media/how-does-bsky-work-blogpost.png'
+
+export const metadata = {
+  title: 'AT Protocol',
+  description:
+    'AT 协议是一个开放、去中心化且高性能的网络，用于构建社交应用程序。',
+}
+
+export const sections = []
+
+<HeroPattern />
+
+# Welcome to the Atmosphere
+
+AT 协议是一个开放、去中心化的网络，用于构建社交应用程序。 {{ className: 'lead' }}
+
+<div className="not-prose mb-16 mt-6 flex gap-3">
+  <Button href="/guides/applications" arrow="right">
+    <>快速开始</>
+  </Button>
+  <Button href="/sdks" variant="outline">
+    <>探索 SDKs</>
+  </Button>
+</div>
+
+{/* TODO <Row>
+  <Col>
+      <Firehose />
+  </Col>
+  <Col>
+    <CodeCard description="Single Sign-On in 5 minutes." href="/todo" icon={UserIcon}>
+      ```js {{containerClassName: 'rounded-t-none !my-0 border-t border-zinc-900/7.5 dark:border-white/10 !ring-0'}}
+      import { BrowserOAuthClient } from '@atproto/oauth-client-browser'
+
+      const client = new BrowserOAuthClient()
+      await client.signIn('my.handle.com', {
+        state: 'some value needed later',
+        prompt: 'none', // Attempt to sign in without user interaction (SSO)
+        ui_locales: 'fr-CA fr en', // Only supported by some OAuth servers (requires OpenID Connect support + i18n support)
+        signal: new AbortController().signal, // Optional, allows to cancel the sign in (and destroy the pending authorization, for better security)
+      })
+      ```
+    </CodeCard>
+  </Col>
+</Row> */}
+
+<Guides lang="cn" />
+
+<Specs lang='cn' />
+
+{/* TODO
+---
+
+## A Web of Data {{className: 'text-2xl mt-2 scroll-mt-32'}}
+
+Atmosphere 是一个互联数据的网络。它是通过其传输帖子、个人资料和评论的多孔膜。它是一个数据库网络，协同工作以提供一个全球性的数据库——一个让人们通过数据进行沟通的工具。
+
+大气层的目的是在大规模上运行社交应用。它被设计为适用于拥有数亿用户的实际应用。Bluesky 应用有 600 万注册用户和 50 万日活跃用户，并以与传统应用大致相同的成本效率运行。
+
+大气层的愿景和使命是让人们更容易构建应用。无论你是一个周末黑客还是正在创建初创公司，你都应该能访问一个社交网络进行构建。社交编程的乐趣应该对每个人开放。
+
+<Button href="/quickstart" arrow="right">
+  <>继续阅读</>
+</Button> */}
+
+## 了解更多
+
+<div className="xl:grid grid-cols-2 gap-12 xl:max-w-none border-t border-zinc-900/5 dark:border-zinc-700 pt-10 mt-4">
+
+<ArticleSummary tag="Guide" title="术语表" href="/guides/glossary" >
+什么是 PDS？什么是 AppView？什么是 DID？如果你被这些新概念搞晕了，不妨看看这个术语表。
+</ArticleSummary>
+
+<ArticleSummary tag="Guide" title="ATProto 快速入门" href="/guides/applications" >
+本指南将带你构建一个简单的多用户应用，用于发布你当前的“状态”表情符号。
+</ArticleSummary>
+
+{/* TODO <ArticleSummary tag="Article" title="What happens when I like a post?" href="/articles/todo" >
+To get started, create a new application in your [developer settings](#), then read about how to make requests for the resources you need to access using our HTTP APIs or dedicated client SDKs. When your integration is ready to go live, publish it to our [integrations directory](#) to reach the Protocol community.
+</ArticleSummary> */}
+
+<ArticleSummary tag="Article" title="面向分布式系统工程师的 ATProto" href="/articles/atproto-for-distsys-engineers" >
+本文将从分布式后端工程的视角探讨 AT Proto。
+</ArticleSummary>
+
+{/* <ArticleSummary tag="Guide" title="用户身份是如何工作的？" href="/guides/identity" >
+什么是 DID 和 handle？域名如何参与？这些身份如何解析为用户数据？本指南将介绍所有这些概念，并解释 Atmosphere 中身份的工作原理。
+</ArticleSummary> */}
+
+<ArticleSummary tag="Guide" title="什么是 Lexicon，如何用它定义 schema？" href="/guides/lexicon" >
+本指南将带你了解 Lexicon，并帮助你开始构建自己的 schema。
+</ArticleSummary>
+
+<ArticleSummary tag="Article" title="ATProto 精神" href="/articles/atproto-ethos" >
+深入探讨 AT Protocol 设计背后的哲学与美学原则。
+</ArticleSummary>
+
+</div>
+
+<div className="flex flex-col xl:grid grid-cols-3 gap-12 xl:max-w-none border-t border-zinc-900/5 dark:border-zinc-700 pt-10 mt-4">
+
+<ImageCard image={WebWithoutWallsPng} href="https://www.youtube.com/watch?v=F1sJW6nTP6E" title="Web Without Walls - Talk at React Universe 2024" tag="Talk" description="An introduction to the AT Protocol presented by Dan Abramov at React Universe Conf 2024" />
+
+<ImageCard image={DotMediaInterviewPng} href="https://flipboard.video/w/ophhJTECuL7fcBNbUitV3q" title="Make Identity Central Again, with Bluesky's Jay Graber" tag="Interview" description="An interview between Jay Graber and Flipboard CEO Mike McCue about making social more like the Web." />
+
+<ImageCard image={WhitepaperPng} href="https://arxiv.org/abs/2402.03239" title="Bluesky and the AT Protocol: Usable Decentralized Social Media" tag="Whitepaper" description="A whitepaper authored by Martin Kleppman and the AT Protocol team." />
+
+{/* <ImageCard image={TbdIntervewJpg} href="https://www.youtube.com/live/D5WVK7KfTAk" title="Building the Social Internet with Bluesky's AT Protocol" tag="Interview" description="An interview between Dan Abramov and TBD about how the dotmedia Protocol works.png" /> */}
+
+{/* <ImageCard image={HowDoesBlueskyWorkBlogpostPng} href="https://steveklabnik.com/writing/how-does-bluesky-work/" title="How does Bluesky work?" tag="Community Blogpost" description="A blog post by Steve Klabnik describing how Bluesky and ATProto work at a high level." /> */}
+
+</div>
+
+{/* ## Community
+
+<div className="xl:grid grid-cols-3 gap-12 xl:max-w-none border-t border-zinc-900/5 dark:border-zinc-700 pt-10 mt-4">
+
+<ArticleSummarySmall href="https://steveklabnik.com/writing/how-does-bluesky-work/" title="How does Bluesky work?">
+by Steve Klabnik
+</ArticleSummarySmall>
+
+<ArticleSummarySmall href="https://bolsonism.blogspot.com/2024/08/local-development-with-at-proto-pds.html" title="Local Development with a PDS">
+Using docker and curl to interact with a local PDS.
+</ArticleSummarySmall>
+
+</div> */}
+
+## 寻找 Bluesky API 文档?
+
+请访问 [docs.bsky.app](https://docs.bsky.app) 查阅 Bluesky 专用文档。

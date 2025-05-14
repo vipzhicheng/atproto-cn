@@ -1,0 +1,118 @@
+export const metadata = {
+  title: '术语表',
+  description:
+    'AT 协议中使用的一系列术语及其定义。',
+}
+
+# 术语表
+
+AT 协议使用了很多可能不太熟悉的术语。此页面快速参考这些术语，并提供一些指向更多信息的链接。 {{className: 'lead'}}
+
+## Atmosphere
+
+"Atmosphere" 是我们用来描述 [AT 协议](#at-protocol) 周围生态系统的术语。
+
+## AT Protocol
+
+AT 协议代表 "Authenticated Transfer Protocol"，通常缩写为 "atproto"。这个名称指的是所有用户数据都由创作用户签名，这使得可以通过许多服务广播数据并证明它是真实的，而无需直接与原始服务器通信。
+
+这个名字也是对 "@" 符号（又名 "at" 符号）的致敬，因为 atproto 是为社交系统设计的。
+
+## PDS (Personal Data Server)
+
+PDS，或个人数据服务器，是托管用户的服务器。PDS 将始终存储用户的 [data repo](#data-repo) 和签名密钥。它还可以为用户分配一个 [handle](#handle) 和一个 [DID](#did-decentralized-id)。许多 PDS 会托管多个用户。
+
+PDS 与 [AppViews](#appview) 通信以运行应用程序。PDS 通常不自己运行任何应用程序，但它将具有通用的帐户管理界面，例如 OAuth 登录屏幕。PDS 主动将其 [data repos](#data-repo) 与 [Relays](#relay) 同步。
+
+## AppView
+
+AppView 是 [Atmosphere](#atmosphere) 中的一个应用程序。它被称为 "AppView"，因为它只是网络的其中一个视图。规范数据存在于 [data repos](#data-repo) 中，该数据由 [PDSes](#pds-personal-data-server) 托管，并且该数据可以通过许多不同的方式查看。
+
+AppView 的功能有点像 Web 上的搜索引擎：它们聚合来自整个 Atmosphere 的数据以生成其 UI。不同之处在于，AppView 还与用户的 [PDSes](#pds) 通信，以在其 [repos](#data-repo) 上发布信息，从而形成完整的应用程序模型。此通信是作为 OAuth 登录流程的一部分建立的。
+
+## Relay
+
+Relay 是来自整个 [Atmosphere](#atmosphere) 的 [data repos](#data-repo) 的聚合器。它们从 [PDSes](#pds) 同步 repos 并生成更改事件的 firehose。[AppViews](#appview) 使用 Relay 来获取用户数据。
+
+Relay 是一种优化，并非绝对必要。[AppView](#appview) 可以直接与 [PDSes](#pds) 通信（事实上，如果需要，建议这样做）。Relay 用于减少网络中所需的连接数。
+
+## Lexicon
+
+Lexicon 是一种模式语言。它在 [Atmosphere](#atmosphere) 中用于描述 [data records](#record) 和 HTTP API。从功能上讲，它与 [JSON-Schema](https://json-schema.org/) 和 [OpenAPI](https://www.openapis.org/) 非常相似。
+
+Lexicon 的唯一目的是帮助开发人员构建兼容的软件。
+
+- [Lexicon 简介](/guides/lexicon)
+- [Lexicon 规范](/specs/lexicon)
+
+## Data Repo
+
+“数据存储库”或“repo”是代表用户的公共数据集。它由 JSON [records](#record) 和非结构化 [blobs](#blob) 的 [collections](#collection) 组成。每个 repo 都被分配一个永久的 [DID](#did-decentralized-id) 来标识它。Repos 还可以有任意数量的 [domain handles](#handle)，这些 handles 充当人类可读的名称。
+
+数据存储库是签名的 merkle 树。它们的签名可以根据 repo 的 [did](#did-decentralized-id) 下发布的密钥材料进行验证。
+
+- [Data Repos 简介](/guides/data-repos)
+- [存储库规范](/specs/repository)
+
+## Collection
+
+“collection”是 [data repository](#data-repo) 中 JSON [records](#record) 的存储桶。它们支持有序列表操作。每个 collection 都由一个 [NSID](#nsid-namespaced-id) 标识，该 NSID 预计会映射到 [Lexicon](#lexicon) 模式。
+
+## Record
+
+“record”是 [repo](#data-repo) [collection](#collection) 中的 JSON 文档。record 的类型由 `$type` 字段标识，该字段预计会映射到 [Lexicon](#lexicon) 模式。该类型还应与包含它的 [collection](#collection) 匹配。
+
+- [Record key 规范](/specs/record-key)
+
+## Blob
+
+Blobs 是存储在 [repo](#data-repo) 中的非结构化数据。它们最常用于存储媒体，例如图像和视频。
+
+## Label
+
+Labels 是附加到帐户（[DIDs](#did-decentralized-id)）和 [records](#record) 的元数据对象。它们通常通过其值引用，例如“nudity”或“graphic-media”，这些值标识标签的含义。Labels 主要供应用程序用于审核，但它们也可用于其他目的。
+
+- [Labels spec](/specs/label)
+
+## Handle
+
+Handles 是用于标识 [data repos](#data-repo) 的域名。可以为 repo 分配多个 handle。Handles 可以在 `at://` URI 的域段中使用。
+
+- [Handle spec](/specs/handle)
+- [URI Scheme spec](/specs/at-uri-scheme)
+
+## DID (Decentralized ID)
+
+DIDs，或去中心化标识符，是代表 [data repos](#data-repo) 的通用唯一标识符。它们是永久的且非人类可读的。DID 是 [W3C 规范](https://www.w3.org/TR/did-core/)。AT 协议目前支持 `did:web` 和 `did:plc`，这两种不同的 DID 方法。
+
+DIDs 解析为包含有关 [repo](#data-repo) 的元数据的文档，包括 repo 的 [PDS](#pds) 的地址、repo 的 [handles](#handle) 和公共签名密钥。
+
+- [DID spec](/specs/did)
+
+## NSID (Namespaced ID)
+
+NSID（命名空间标识符）是一种在 [Atmosphere](#atmosphere) 中用于标识 [Lexicon](#lexicon) 模式的标识符格式。它们遵循反向 DNS 格式，例如 `app.bsky.feed.post`。选择它们是因为它们通过域所有权提供清晰的模式治理。选择反向 DNS 格式是为了避免与 URI 中的域混淆。
+
+- [NSID spec](/specs/nsid)
+
+## TID (Timestamp ID)
+
+TID（时间戳标识符）是一种用于 [record](#record) 键的标识符格式。它们源自当前时间，旨在避免冲突、保持词典排序并有效地平衡 [data repository](#data-repo) 的内部数据结构。
+
+- [Record keys spec](/specs/record-key)
+
+## CID (Content ID)
+
+CID（内容标识符）是 [records](#record) 的加密哈希。它们用于跟踪 records 的特定版本。
+
+## DAG-CBOR
+
+DAG-CBOR 是 [atproto](#at-protocol) 使用的序列化格式。选择它是因为它提供了可靠的规范形式，这对于加密验证很重要。
+
+- [Data model spec](/specs/data-model)
+
+## XRPC
+
+XRPC 是我们正在弃用的一个术语，但它在历史上曾用于描述 [atproto](#at-protocol) 的 HTTP 使用方式。它代表“跨组织远程过程调用”，我们很遗憾发明了它，因为实际上我们只是在使用 HTTP。
+
+- [HTTP API spec](/specs/xrpc)

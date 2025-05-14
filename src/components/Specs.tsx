@@ -29,8 +29,9 @@ interface Spec {
 const specs: Array<Spec> = [
   {
     href: '/specs/repository',
-    name: { en: 'Repository', pt: 'Repositório', ja: 'リポジトリ' },
+    name: { en: 'Repository', pt: 'Repositório', ja: 'リポジトリ', cn: '仓库' },
     description: {
+      cn: '用于公共账户内容的自我认证存储。',
       en: 'Self-authenticating storage for public account content.',
       pt: 'Armazenamento autoautenticado para conteúdo de conta pública.',
       ja: 'パブリック アカウント コンテンツ用の自己認証ストレージ。',
@@ -43,9 +44,10 @@ const specs: Array<Spec> = [
   },
   {
     href: '/specs/lexicon',
-    name: { en: 'Lexicon', pt: 'Lexicon', ja: '用語集' },
+    name: { en: 'Lexicon', pt: 'Lexicon', ja: '用語集', cn: '词汇表' },
     description: {
       en: 'A schema definition language for ATProto.',
+      cn: 'ATProto 的模式定义语言。',
       pt: 'Uma linguagem de definição de esquema para ATProto.',
       ja: 'ATProto のスキーマ定義言語。',
     },
@@ -64,8 +66,10 @@ const specs: Array<Spec> = [
       en: 'HTTP API (XRPC)',
       pt: 'HTTP API (XRPC)',
       ja: 'HTTP API (XRPC)',
+      cn: 'HTTP API (XRPC)',
     },
     description: {
+      cn: '跨系统查询和过程调用通过 HTTP。',
       en: 'Cross-system queries and procedures over HTTP.',
       pt: 'Consultas e procedimentos entre sistemas via HTTP.',
       ja: 'HTTP 経由のシステム間クエリとプロシージャ。',
@@ -81,8 +85,14 @@ const specs: Array<Spec> = [
   },
   {
     href: '/specs/at-uri-scheme',
-    name: { en: 'URI Scheme', pt: 'Esquema URI', ja: 'URI スキーム' },
+    name: {
+      en: 'URI Scheme',
+      pt: 'Esquema URI',
+      ja: 'URI スキーム',
+      cn: 'URI 方案',
+    },
     description: {
+      cn: '用于寻址 ATProto 存储库数据的 URI 方案。',
       en: 'A URI scheme for addressing ATProto repository data.',
       pt: 'Um esquema URI para endereçar dados do repositório ATProto.',
       ja: 'ATProto リポジトリ データをアドレス指定するための URI スキーム。',

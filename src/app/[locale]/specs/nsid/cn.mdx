@@ -1,0 +1,85 @@
+export const metadata = {
+  title: 'Namespaced Identifiers (NSIDs)',
+  description:
+    '全局语义标识符（semantic IDs）规范。',
+}
+
+# Namespaced Identifiers (NSIDs)
+
+Namespaced Identifiers (NSIDs) 用于引用 Lexicon schemas，包括记录、XRPC 端点等。{{ className: 'lead' }}
+
+NSID 的基本结构和语义是一个按照反向域名顺序排列的完全限定主机名，后跟一个简单名称。主机名部分是**域名权威**（domain authority），最后一段是**名称**（name）。{{ className: 'lead' }}
+
+
+### NSID 语法
+
+Lexicon 字符串类型：`nsid`
+
+NSID 的 domain authority 部分必须是一个有效的反向顺序的 handle。后面跟着一个 name 段，必须是 ASCII 驼峰式字符串。
+
+例如，`com.example.fooBar` 是一个语法有效的 NSID，其中 `com.example` 是 domain authority，`fooBar` 是 name 段。
+
+完整的语法规则如下：
+
+- NSID 整体要求：
+  - 只能包含 ASCII 字符
+  - 使用 ASCII 句点字符（`.`）分隔 domain authority 和 name
+  - 必须至少有 3 个段
+  - 最大总长度为 317 个字符
+- Domain authority 要求：
+  - 由句点（`.`）分隔的段组成
+  - 最多 253 个字符（包括句点），且必须至少包含两个段
+  - 每个段必须至少 1 个字符且最多 63 个字符（不包括句点）
+  - 允许的字符包括 ASCII 字母（`a-z`）、数字（`0-9`）和连字符（`-`）
+  - 段不能以连字符开始或结束
+  - 第一个段（顶级域名）不能以数字开头
+  - domain authority 不区分大小写，应规范化为小写（即将 ASCII `A-Z` 规范化为 `a-z`）
+- Name 要求：
+  - 必须至少 1 个字符且最多 63 个字符
+  - 只允许 ASCII 字母和数字（`A-Z`、`a-z`、`0-9`）
+  - 不允许使用连字符
+  - 第一个字符不能是数字
+  - 区分大小写且不应被规范化
+
+NSID 的参考正则表达式：
+
+
+```
+com.example.fooBar
+net.users.bob.ping
+a-0.b-1.c
+a.b.c
+com.example.fooBarV2
+cn.8.lex.stuff
+```
+
+以下是无效的 NSIDs:
+
+```
+com.exa💩ple.thing
+com.example
+com.example.3
+```
+
+
+### 使用和实现指南
+
+一个**强烈建议**的最佳实践是在 authority domains 中仅使用 ASCII 字母字符（即不使用数字或连字符）。这使得在大多数编程语言中生成客户端库变得更加容易。
+
+NSID 在显示、存储和验证时是区分大小写的。但是，不允许存在仅大小写不同的多个 NSID。命名空间权威负责防止重复和混淆。实现时不应强制将 NSID 转换为小写。
+
+使用"子域"作为"domain authority"的一部分来组织相关 NSID 是很常见的。例如，NSID `com.atproto.sync.getHead` 使用了 `sync` 段。注意，除了需要控制 `atproto.com` 域名外，还需要控制完整的 `sync.atproto.com` 域名。
+
+Lexicon 语言文档将为记录类型和 XRPC 方法的 NSID 选择和组织提供样式指南。简而言之，记录通常是单个名词，不使用复数形式。XRPC 方法通常采用"动词名词"的形式。
+
+
+### 可能的未来变更
+
+NSID 语法可能会放宽，允许在最后一段使用 Unicode 字符。
+
+"glob"语法变体可能会被修改，以使单级匹配和嵌套匹配之间的区别更加明确。
+
+"fragment"语法变体未来可能会放宽以允许嵌套引用。
+
+目前不存在验证"domain authority"控制权的自动化机制。同样，也不存在用于获取给定 NSID 的 lexicon schema 或枚举基础域名所有 NSID 的自动化机制。
+

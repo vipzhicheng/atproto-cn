@@ -1,0 +1,76 @@
+export const metadata = {
+  title: '协议概述',
+  description:
+    'AT Protocol 简介。',
+}
+
+# 协议概述
+
+**Authenticated Transfer Protocol**，简称 **atproto**，是一个面向大规模社交网络应用的去中心化协议。本文档将为你介绍 AT Protocol 背后的理念。
+
+## 身份标识
+
+AT Protocol 中的用户账户拥有永久的去中心化标识符（DID）。他们还可以配置一个域名，作为可读性更强的用户名。身份标识中包含用户当前托管服务商的引用以及加密密钥。
+
+## 数据仓库
+
+用户数据通过[签名数据仓库](/guides/data-repos)进行交换。这些仓库是记录的集合，包括帖子、评论、点赞、关注等。
+
+## 网络架构
+
+AT Protocol 采用联邦式网络架构，意味着账户数据存储在主机服务器上，而不是终端设备之间的点对点模式。选择联邦架构是为了确保网络易用且高可用。仓库数据通过标准 Web 技术（[HTTP](/specs/xrpc) 和 [WebSockets](/specs/event-stream)）在服务器间同步。
+
+网络的三大核心服务是 Personal Data Servers（PDS）、Relays 和 App Views。还有一些辅助服务，如 feed generators 和 labelers。
+
+底层原语包括仓库、lexicon 和 DID，可以以不同方式组合。我们在[博客](https://bsky.social/about/blog/5-5-2023-federation-architecture)上发布了关于联邦架构技术决策的概述。
+
+## 互操作性
+
+一个名为 [Lexicon](/specs/lexicon) 的全球 schema 网络用于统一服务器间调用的名称和行为。服务器通过实现“lexicon”来支持功能集，包括用于同步用户仓库的核心 `com.atproto.*` lexicon，以及提供基础社交功能的 `app.bsky.*` lexicon。
+
+Web 交换的是文档，而 AT Protocol 交换的是结构化和语义信息，使不同组织的软件能够理解彼此的数据。这让 atproto 客户端可以独立于服务器实现用户界面，无需在浏览内容时交换渲染代码（HTML/JS/CSS）。
+
+## 实现规模化
+
+Personal Data Server 是你在云端的家。它托管你的数据、分发数据、管理身份，并协调对其他服务的请求以提供视图。
+
+Relay 从多个服务器收集数据更新，形成统一的数据流。
+
+App View 为整个网络提供聚合的应用数据，支持大规模指标（点赞、转发、关注）、内容发现（算法）和用户搜索。
+
+这种角色分离旨在为用户在多个可互操作的服务商之间提供选择，同时支持大规模网络扩展。
+
+## 算法选择权
+
+如同 Web 搜索引擎，用户可以自由选择聚合器。Feed、labeler 和搜索索引可以由独立第三方提供，PDS 会根据客户端应用配置路由请求。客户端应用也可以绑定到特定服务，如 App View 或强制 labeler。
+
+## 账户可迁移性
+
+我们假设 Personal Data Server 可能随时失效，无论是整体离线还是停止为特定用户服务。AT Protocol 的目标是确保用户可以在无需原服务器协助的情况下，将账户迁移到新的 PDS。
+
+用户数据存储在[签名数据仓库](/guides/data-repos)中，并通过 [DID](/guides/identity) 进行认证。签名数据仓库类似于 Git 仓库，但用于数据库记录；DID 提供加密密钥目录，在某些方面类似于 TLS 证书系统。身份应当安全、可靠且独立于用户的 PDS。
+
+大多数 DID 文档会发布两类公钥：签名密钥和轮换密钥。
+
+* **签名密钥**：用于验证用户的数据仓库。所有 DID 都包含此密钥。
+* **轮换密钥**：用于声明 DID 文档本身的变更。PLC DID 方法包含此密钥，而 DID Web 方法不包含。
+
+签名密钥交由 PDS 管理，以便其管理用户数据，但轮换密钥可由用户自行掌控，例如作为纸质密钥。这使用户能够在无需原主机协助的情况下，将账户迁移到新的 PDS。
+
+用户的数据备份可以持续同步到自己的设备（取决于可用磁盘空间），或由第三方服务镜像。如果 PDS 突然消失，用户只需更新 DID 文档并上传数据备份，即可迁移到新服务商。
+
+## 言论、传播与内容管理
+
+AT Protocol 的模型是将 _言论_ 和 _传播_ 分为两个协作层。底层“言论”层应保持开放，分散权力，确保每个人都有发声权。上层“传播”层则注重灵活性和可扩展性。
+
+atproto 的基础层（个人数据仓库和联邦网络）为言论创造了公共空间，任何人都可以参与，类似于 Web 上任何人都能搭建网站。索引服务则通过聚合网络内容实现传播，类似于搜索引擎。
+
+## 规范
+
+AT Protocol 初始版本的主要规范包括：
+
+- [Authenticated Transfer Protocol](/specs/atp)
+- [DID](/specs/did) 和 [Handle](/specs/handle)
+- [Repository](/specs/repository) 和 [Data Model](/specs/data-model)
+- [Lexicon](/specs/lexicon)
+- [HTTP API (XRPC)](/specs/xrpc) 和 [Event Streams](/specs/event-stream)

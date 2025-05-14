@@ -1,0 +1,392 @@
+export const metadata = {
+  title: 'OAuth',
+  description:
+    '用于客户端/服务器认证与授权的 OAuth',
+}
+
+# OAuth
+
+<Note>
+atproto 的 OAuth profile 是新设计的,可能会根据开发社区的反馈和正在进行的标准工作进行修订。在 [OAuth 路线图](https://github.com/bluesky-social/atproto/discussions/2656)中可以阅读更多关于部署的信息。
+</Note>
+
+<Note>
+本规范具有权威性,但不是实施指南,也没有提供太多关于设计决策的背景或上下文。早期的[设计提案](https://github.com/bluesky-social/proposals/tree/main/0004-oauth)不具有权威性,但提供了更多的上下文和示例。SDK 文档和[客户端实现指南](https://docs.bsky.app/docs/advanced-guides/oauth-client)对开发者来说更容易理解。
+</Note>
+
+OAuth 是 atproto 中客户端向 PDS 实例发出授权请求的主要机制。大多数面向用户的软件都预计会使用 OAuth,包括"前端"客户端(如移动应用程序、富浏览器应用程序或本地桌面应用程序)以及"后端"客户端(如 Web 服务)。
+
+有关 atproto 中其他形式的身份验证，包括传统的 HTTP 客户端会话/令牌和服务间身份验证，请参阅 [HTTP API 规范](./xrpc)。
+
+OAuth 是由 IETF 标准化的一个不断发展的标准和最佳实践框架。atproto 使用了特定的 OAuth "profile",它要求使用本文档中描述的特定 OAuth 标准组合。
+
+从较高层面来看,我们从 "OAuth 2.1" ([`draft-ietf-oauth-v2-1`](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)) 演进的 OAuth 2.0 开始,这意味着:
+
+- 仅支持"授权码" OAuth 2.0 授权类型,不支持"隐式"或其他授权类型
+- 强制使用授权码交换证明密钥(PKCE, [RFC 7636](https://datatracker.ietf.org/doc/html/rfc7636))
+- 要求遵循安全最佳实践([`draft-ietf-oauth-security-topics`](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics) 和 [`draft-ietf-oauth-browser-based-apps`](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-browser-based-apps))
+
+与集中式的应用平台不同,atproto 中有许多独立的服务器实现,因此服务器发现和客户端注册是使用公共认证服务器元数据和公共客户端元数据的组合来自动完成的。`client_id` 是指向公共客户端元数据(JSON 文档)的完全限定 web URL。服务器和客户端之间没有共享的 `client_secret`。当使用 handle 或 DID 启动登录时,需要进行 atproto 特定的身份解析步骤来发现账户的 PDS 网络位置。
+
+在 OAuth 术语中,atproto 个人数据服务器(PDS)是"资源服务器",通过使用访问令牌向其发出授权的 HTTP 请求。有时 PDS 同时也是"授权服务器"——用于处理 OAuth 授权流程和令牌请求,而在其他情况下,一个单独的"入口"服务可以作为多个 PDS 实例的授权服务器。客户端从 PDS 的元数据文件中发现授权服务器的网络位置。
+
+DPoP(强制要求服务器发布 nonce)用于将认证令牌绑定到特定的客户端软件实例(如终端设备或浏览器会话)。使用推送认证请求(PAR)来简化授权请求流程。"保密"客户端在发出授权请求时使用带有密钥签名的 JWT 来向授权服务器验证客户端软件。
+
+使用客户端元数据进行自动客户端注册是 atproto 中 OAuth 更新颖的方面之一。截至 2024 年 8 月,客户端元数据仍然是一个互联网草案 ([`draft-parecki-oauth-client-id-metadata-document`](https://datatracker.ietf.org/doc/draft-parecki-oauth-client-id-metadata-document/));不应与现有的"动态客户端注册"标准([RFC 7591](https://datatracker.ietf.org/doc/html/rfc7591))混淆。我们希望其他开放协议在将来也采用类似的自动注册流程,但可能需要一段时间才能得到一般 OAuth 生态系统的支持。
+
+OAuth 2.0 传统上是一个授权(`authz`)系统,而不是认证(`authn`)系统,这意味着它并不总是纯账户认证用例的解决方案,比如"使用 XYZ 注册/登录"身份集成。OpenID Connect (OIDC)建立在 OAuth 2.0 之上,通常是推荐用于身份认证的标准。不幸的是,OIDC 的当前版本不能以安全和通用的方式实现 atproto 身份的认证。atproto 的 OAuth profile 包含了一个(强制性的)在授权流程中进行账户认证的机制,可以用于 atproto 身份认证用例。
+
+
+## 客户端
+
+本节描述了 OAuth 客户端的要求,这些要求由授权服务器强制执行。
+
+OAuth 客户端软件由全局唯一的 `client_id` 标识。同一软件的不同变体可能有不同的 `client_id` 值;例如,同一软件的浏览器应用和 Android(移动操作系统)变体可能有不同的 `client_id` 值。根据 [`draft-parecki-oauth-client-id-metadata-document`](https://datatracker.ietf.org/doc/draft-parecki-oauth-client-id-metadata-document) 规范草案的要求,`client_id` 必须是一个可以获取客户端元数据 JSON 文档的完全限定 web URL。例如,`https://app.example.com/client-metadata.json`。关于 `client_id` 的更多说明:
+
+- 必须是符合 W3C URL 规范的格式良好的 URL
+- schema 必须是 `https://`,且不能包含端口号。注意开发环境下有 `http://localhost` `client_id` 值的特殊例外情况,详见下文
+- 路径不需要包含 `client-metadata.json`,但这是一个有用的约定
+
+同时支持 atproto OAuth profile 和其他 OAuth 形式的授权服务器应注意防止 `client_id` 值冲突。例如,未自动注册的客户端的 `client_id` 值绝不应该有前缀 `https://` 或 `http://`。
+
+### 客户端类型
+
+所有 atproto OAuth 客户端都需要满足一组核心标准和要求,但根据客户端本身的安全属性,在功能(如会话生命周期)方面有一些变化。
+
+如 OAuth 2.0 规范([RFC 6749](https://datatracker.ietf.org/doc/html/rfc6749))所述,每个客户端属于以下两种广泛类型之一:
+
+- **保密客户端**是可以使用加密签名密钥向授权服务器验证自身的客户端。这允许将刷新令牌绑定到特定客户端。请注意,这种形式的客户端身份验证与 DPoP 不同:客户端身份验证密钥对所有客户端会话都是通用的(尽管可以轮换)。这通常意味着有一个由客户端控制的 web 服务来保存密钥。由于它们经过身份验证且可以在安全事件中撤销令牌,保密客户端可能被信任拥有更长的会话和令牌生命周期。
+- **公开客户端**不使用客户端签名密钥进行身份验证,这是因为它们没有服务器端组件(客户端软件全部在最终用户设备上运行),或者它们只是选择不实现它。
+
+web 服务可以作为公开客户端,相反,移动应用和浏览器应用也可以与令牌中介后端服务协调,组合形成保密客户端。移动应用和浏览器应用也可以采用"前端后端"(BFF)架构,web 服务后端作为 OAuth 客户端。本文档将使用"公开"和"保密"客户端术语以保持清晰。
+
+客户端运行的环境也会影响授权流程中使用的重定向(回调)URL 类型:
+
+- **web 客户端**包括 web 服务和浏览器应用。重定向 URL 是在浏览器中打开的常规 web URL。
+- **本地客户端**包括一些移动和桌面本地客户端。重定向 URL 可以使用平台特定的应用回调方案在应用本身中打开。
+
+授权服务器可能维护一组由 `client_id` 标识的"受信任"客户端。由于任何客户端都可能使用未经验证的客户端元数据来冒充知名应用或品牌,授权服务器默认不应在授权界面向最终用户显示此类元数据。受信任的客户端可以显示额外的元数据,如可读名称(`client_name`)、项目 URI(`client_uri`,可能与 `client_id` 有不同的域/来源)和徽标(`logo_uri`)。详见"安全注意事项"部分。
+
+仅使用 atproto OAuth 进行账户身份验证(无需授权访问 PDS 资源)的客户端应请求最小范围的作用域(见"作用域"部分),但仍需要实现大部分授权流程。特别是,检查令牌响应中的 `sub` 字段以验证账户身份是至关重要的(这是 atproto 特有的细节)。
+
+### 客户端 ID 元数据文档
+
+<Note>
+客户端 ID 元数据文档规范([`draft-parecki-oauth-client-id-metadata-document`](https://datatracker.ietf.org/doc/draft-parecki-oauth-client-id-metadata-document/))仍处于草案阶段,可能会随时间发生变化。我们的目标是与后续草案和任何最终标准保持一致和演进,同时最大限度地减少对现有实现的破坏。
+</Note>
+
+客户端必须在公共网络上发布"客户端元数据"JSON 文件。作为授权请求(PAR)的一部分以及会话生命周期中的其他时间,授权服务器将动态获取该文件。HTTP 响应状态必须是 200(不是其他 2xx 或重定向),具有正确 `Content-Type`(`application/json`)的 JSON 对象主体。
+
+授权服务器需要从公共网络获取客户端元数据文档。它们应该为这些请求使用加固的 HTTP 客户端(参见"OAuth 安全注意事项")。服务器可以缓存客户端元数据响应,可选择遵守 HTTP 缓存头(在限制范围内)。目前没有指定最小和最大缓存 TTL,但应选择确保基于过时的保密客户端身份验证密钥(`jwks` 或 `jwks_uris`)的认证令牌请求能及时被拒绝。
+
+以下字段与所有客户端类型相关:
+
+- `client_id`(字符串,必填):即 `client_id`。必须与用于获取客户端元数据文件本身的完整 URL 完全匹配
+- `application_type`(字符串,可选):必须是 `web` 或 `native` 之一,如果未指定则默认为 `web`。请注意,这是 OpenID/OIDC 指定的字段,我们借用了这个字段。由授权服务器用来执行相关的"当前最佳实践"。
+- `grant_types`(字符串数组,必填):`authorization_code` 必须始终包含在内。`refresh_token` 是可选的,但如果客户端将发出令牌刷新请求,则必须包含在内。
+- `scope`(字符串,子字符串以空格分隔,必填):此客户端可能请求的所有作用域值都在此声明。必须包含 `atproto` 作用域。见"作用域"部分。
+- `response_types`(字符串数组,必填):必须包含 `code`。
+- `redirect_uris`(字符串数组,必填):至少需要一个重定向 URI。有关重定向 URI 的规则,另见授权请求字段部分。
+- `token_endpoint_auth_method`(字符串,可选):保密客户端必须将此项设置为 `private_key_jwt`。
+- `token_endpoint_auth_signing_alg`(字符串,可选):这里永远不允许 `none`。当前推荐和最受支持的算法是 `ES256`,但这可能会随时间演变。授权服务器将把这个值与他们支持的算法进行比较。
+- `dpop_bound_access_tokens`(布尔值,必填):DPoP 对所有客户端都是强制性的,因此必须存在且为 `true`
+- `jwks`(带有 JWK 数组的对象,可选):保密客户端必须以 JWK 格式提供至少一个用于 JWT 客户端身份验证的公钥。保密客户端必须提供此字段或 `jwks_uri` 字段,但不能同时提供两者。
+- `jwks_uri`(字符串,可选):指向 JWKS JSON 对象的 URL。详见上面的 `jwks`。
+
+这些字段是可选的但建议使用:
+
+- `client_name`(字符串,可选):客户端的人类可读名称
+- `client_uri`(字符串,可选):不要与 `client_id` 混淆,这是客户端的主页 URL。如果提供,`client_uri` 必须与 `client_id` 具有相同的主机名。
+- `logo_uri`(字符串,可选):客户端徽标的 URL。仅允许 `https:` URI。
+- `tos_uri`(字符串,可选):指向客户端人类可读服务条款(ToS)的 URL。仅允许 `https:` URI。
+- `policy_uri`(字符串,可选):指向客户端人类可读隐私政策的 URL。仅允许 `https:` URI。
+
+关于何时向最终用户显示 `client_name`、`client_uri` 和 `logo_uri`,请参见下面的"OAuth 安全注意事项"。
+
+其他可选的客户端元数据字段在 [IANA](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml#client-metadata) 中列举。请注意,这些字段与"动态客户端注册"标准共享,atproto OAuth profile 并不直接使用该标准。
+
+### Localhost 客户端开发
+
+在使用开发环境(授权服务器和客户端)时,开发人员可能很难在公共 URL 上发布进行中的客户端元数据以供授权服务器访问。对于使用容器化授权服务器和本地 DNS 的开发环境来说,由于针对本地 IP 范围的 SSRF 保护,这甚至可能是真实的。
+
+为了使开发工作流程更容易,对于具有 `http://localhost` 源的 `client_id`(未指定端口号)的客户端做出了特殊例外。鼓励授权服务器支持此例外情况 - 包括在生产环境中 - 但这是可选的。
+
+在 localhost `client_id` 场景中,授权服务器应验证方案是 `http`,且主机名恰好是 `localhost` 且未指定端口。不支持 IP 地址(`127.0.0.1` 等)。路径参数必须为空(`/`)。
+
+在授权请求中,`redirect_uri` 必须与提供的 URI 之一(或默认值)匹配。路径组件必须匹配,但端口号不匹配。
+
+一些元数据字段可以通过 `client_id` URL 中的查询参数(带适当的 url 编码)配置:
+
+- `redirect_uri`(字符串,允许多个查询参数,可选):允许声明本地重定向/回调 URL,匹配路径组件但忽略端口号。默认值(如果未提供)为 `http://127.0.0.1/` 和 `http://[::1]/`。
+- `scope`(字符串,以空格分隔的值,允许单个查询参数,可选):客户端可能请求的作用域集。默认为 `atproto`。
+
+虚拟客户端元数据文档中的其他参数将是:
+
+- `client_id`(字符串):用于生成虚拟文档的确切 `client_id`(URL)
+- `client_name`(字符串):由授权服务器选择的值(例如"开发客户端")
+- `response_types`(字符串数组):必须包含 `code`
+- `grant_types`(字符串数组):`authorization_code` 和 `refresh_token`
+- `token_endpoint_auth_method`: `none`
+- `application_type`: `native`
+- `dpop_bound_access_tokens`: `true`
+
+请注意,这作为一个公开客户端工作,而不是保密客户端。
+
+
+## 身份认证
+
+正如引言中所提到的,OAuth 2.0 通常只提供授权(`authz`),而额外的标准如 OpenID/OIDC 则用于身份认证(`authn`)。atproto profile OAuth 要求对账户身份进行认证,并支持简单的身份认证用例而无需额外的资源访问授权。
+
+在 atproto 中,账户身份锚定在账户的 DID 上,这是账户的永久性、全局唯一、可公开解析的标识符。DID 解析为一个 DID 文档,该文档指示了账户的当前 PDS 主机位置。该 PDS(结合可选的入口服务)是该账户的授权机构和 OAuth 授权服务器。当与任何授权服务器通信时,客户端必须确认它确实是该账户的权威服务器,这意味着要独立解析账户身份(通过 DID)并确认授权服务器匹配。在授权流程结束时,确认授权服务器实际授权了预期账户也是至关重要的。这是必要的,因为需要确认授权服务器对相关账户具有权威性。否则恶意服务器可能会向客户端认证任意账户(DID)。
+
+客户端可以通过以下两种方式之一开始授权流程:
+
+- 从用户提供的公共账户标识符开始:handle 或 DID
+- 从用户提供的服务器主机名开始:PDS 或入口服务,映射到资源服务器和/或授权服务器
+
+以服务器而不是账户标识符开始的一个用例是当用户不记得完整的账户 handle 或只知道账户邮箱时。另一个用例是当用户的 handle 被破坏时进行身份认证。在这些情况下,用户仍然需要知道他们的托管提供商。
+
+当以账户标识符开始时,客户端必须将 atproto 身份解析为 DID 文档。如果以 handle 开始,则必须通过检查 DID 文档声明的 handle 来双向验证 handle(参见 atproto Handle 规范)。必须支持所有 handle 解析技术和所有 atproto 认可的 DID 方法,以确保与所有账户的互操作性。
+
+在某些客户端环境中,可能难以解析所有身份类型。例如,handle 解析可能涉及 DNS TXT 查询,这在浏览器应用中不能直接支持。客户端实现可能使用替代技术(如 DNS-over-HTTP)或利用支持性 web 服务来解析身份。
+
+由于授权流程至关重要,任何身份解析缓存都应该谨慎选择缓存生命周期。建议专门针对授权流程的缓存生命周期不超过 10 分钟。
+
+解析的 DID 应该绑定到整个授权会话,并应该在客户端应用代码中作为主要的账户标识符使用。handle(经过验证)可以在用户界面中显示,但可能会随时间变化并需要定期重新验证。当将账户标识符作为授权请求的一部分通过 `login_hint` 传递给授权服务器时,建议使用用户提供的确切账户标识符(handle 或 DID),以确保登录流程的一致性(用户可能不认识自己的账户 DID)。
+
+在授权流程结束时,当客户端进行初始令牌获取时,授权服务器必须在 JSON 响应主体的 `sub` 字段中返回账户 DID。如果整个授权流程以账户标识符开始,那么客户端必须验证这个 DID 与之前绑定到会话的预期 DID 匹配;在这种情况下,从账户到授权服务器的链接已经得到验证。
+
+如果授权流程是以服务器(主机名或 URL)开始,客户端首先将尝试获取资源服务器元数据(如果找到则解析为授权服务器),然后尝试获取授权服务器元数据。关于服务器元数据获取,请参阅"授权服务器"部分。如果其中任何一个成功,客户端将最终有一个已识别的授权服务器。授权请求流程将继续,无需绑定 `login_hint` 或账户标识符到会话,但授权服务器 `issuer` 将被绑定到会话。
+
+在授权流程继续并且初始令牌请求成功后,客户端将从令牌响应中的 `sub` 字段解析账户标识符。此时,客户端仍然不能信任它已经验证了指示的账户。客户端必须解析身份(DID 文档),提取声明的 PDS 主机,通过获取资源服务器元数据确认 PDS(资源服务器)解析为绑定到会话的授权服务器,并获取授权服务器元数据以确认 `issuer` 字段与授权服务器源匹配(参见 [`draft-ietf-oauth-v2-1` 第 7.3.1 节](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-11#section-7.13.1)关于最后一点)。
+
+再次强调,对所有客户端来说 - 包括那些只对 atproto 身份认证感兴趣的客户端 - 完成整个授权流程并验证令牌响应中的账户标识符(DID)在 `sub` 字段中与授权服务器主机名/源(`issuer`)一致性是至关重要的。
+
+## 授权范围
+
+OAuth 作用域允许对客户端被授予访问的资源和操作进行更细粒度的控制。
+
+特殊的 `atproto` 作用域对所有 atproto OAuth 会话都是必需的。其语义有点类似于 `openid` 作用域:包含它确认客户端正在使用 atproto profile OAuth 并将遵守本规范中列出的所有要求。没有此作用域,不会授予对任何 atproto 特定 PDS 资源的访问权限。
+
+如果客户端不包含 `atproto` 作用域,授权服务器可能支持其他 OAuth profile。例如,授权服务器可能同时作为 atproto PDS/入口服务和支持其他协议/标准的服务。
+
+使用 atproto OAuth profile(由 `atproto` 作用域指示)意味着授权服务器将在令牌请求的 `sub` 字段中返回 atproto 账户 DID 作为账户标识符。授权服务器必须在其元数据文档中的 `scopes_supported` 中返回 `atproto`,以便客户端知道它们支持 atproto OAuth profile。如果客户端只需要账户认证 - 例如"使用 atproto 登录"用例,可以只包含 `atproto` 作用域。与 OpenID 不同,atproto 中的配置文件元数据通常是公开的,因此不需要额外的授权作用域来获取配置文件元数据。
+
+OAuth 2.0 规范不要求授权服务器在令牌响应中返回授予的作用域,除非授予的作用域与客户端请求的不同。在 atproto OAuth profile 中,服务器必须始终在令牌响应中返回授予的作用域。如果响应不包含 `scope` 字段,或者 `scope` 字段不包含 `atproto`,客户端应该拒绝令牌响应。
+
+目前的意图是支持基于 Lexicon 命名空间(NSID)的灵活作用域,以便客户端只能获得其需要访问的特定内容和 API 端点的访问权限。在该作用域系统的设计就绪之前,atproto profile OAuth 定义了两个过渡作用域,这些作用域与原始"会话令牌"认证系统下授予的权限一致:
+
+- `transition:generic`:广泛的 PDS 账户权限,相当于之前的"App Password"授权级别。
+  - 写入(创建/更新/删除)任何存储库记录类型
+  - 上传 blob(媒体文件)
+  - 读写任何个人偏好设置
+  - 对大多数 Lexicon 端点的 API 端点和服务代理,可代理到任何服务提供商(由 DID 标识)
+  - 能够为客户端有权访问的特定 API 端点生成服务认证令牌
+  - 无账户管理操作:更改 handle、更改电子邮件、删除或停用账户、迁移账户
+  - 特别地,不能访问 DM(即 `chat.bsky.*` Lexicons)
+- `transition:chat.bsky`:相当于为"App Passwords"添加"DM Access"开关
+  - 特别是针对 `chat.bsky` Lexicons 的 API 端点和服务代理
+  - 能够为 `chat.bsky` Lexicons 生成服务认证令牌
+  - 此作用域依赖于 `transition:generic` 作用域,没有它就无法工作
+
+## 授权请求
+
+本节详细说明了授权请求的具体标准和要求。
+
+对所有客户端类型和授权服务器都要求使用 PKCE 和 PAR。保密客户端使用 JWT 客户端断言进行身份验证。
+
+### 请求字段
+
+与 atproto OAuth profile 相关的授权请求字段摘要:
+
+- `client_id`(字符串,必填):标识客户端软件。详见上文"客户端"部分。
+- `response_type`(字符串,必填):必须为 `code`
+- `code_challenge`(字符串,必填):PKCE 挑战值。见"PKCE"部分。
+- `code_challenge_method`(字符串,必填):使用的代码挑战方法,例如 `S256`。见"PKCE"部分。
+- `state`(字符串,必填):用于验证授权请求与响应的随机令牌。见下文。
+- `redirect_uri`(字符串,必填):必须与客户端元数据中声明的 URI 匹配,并且格式必须与客户端元数据中声明的 `application_type` 一致。见下文。
+- `scope`(以空格分隔的值的字符串,必填):必须是客户端元数据中声明的作用域的子集。必须包含 `atproto`。见"作用域"部分。
+- `client_assertion_type`(字符串,可选):由保密客户端用来描述客户端认证机制。见"保密客户端"部分。
+- `client_assertion`(字符串,可选):仅用于保密客户端的客户端认证。见"保密客户端"部分。
+- `login_hint`(字符串,可选):用于登录的账户标识符。见"授权界面"部分。
+
+不应包含在许多其他 OAuth profile 中使用的 `client_secret` 值。
+
+客户端授权请求中的 `state` 参数是强制性的。客户端应该使用随机生成的令牌作为此参数,并且不应在任何设备、账户或会话组合中出现冲突或重用令牌。授权服务器应该拒绝重复的状态参数,但目前不要求跟踪跨账户或会话的状态值。`state` 参数实际上用于稍后验证 `issuer`,重要的是不受信任方不能伪造或猜测该参数。
+
+对于 web 客户端,`redirect_uri` 是一个 HTTPS URL,在授权流程结束时将在浏览器中重定向将用户返回到应用程序。URL 可以包含端口号,但如果是默认端口号则不能包含。`redirect_uri` 必须匹配客户端元数据中声明的 URI 之一,授权服务器必须验证这个条件。URL 源必须与 `client_id` 的源匹配。
+
+对于 localhost 开发工作流程使用 `http://127.0.0.1` 或 `http://[::1]` URL 有特殊例外,匹配规则在"Localhost 客户端开发"部分描述。这些客户端使用 web URL,但在生成的客户端元数据中将 `application_type` 设置为 `native`。
+
+对于本地客户端,`redirect_uri` 可以使用自定义 URI 方案让操作系统将用户重定向回应用程序,而不是 web 浏览器。本地客户端也允许使用 HTTPS URL。任何自定义方案必须按反向域名顺序匹配 `client_id` 主机名。URI 方案必须后跟一个冒号(`:`)然后是一个正斜杠(`/`)和 URI 路径组件。例如,一个 `client_id` 为 [`https://app.example.com/client-metadata.json`](https://app.example.com/client-metadata.json) 的应用可以有一个 `redirect_uri` 为 `com.example.app:/callback`。
+
+本地客户端也允许使用 HTTPS URL。在这种情况下,URL 源必须与 `client_id` 相同。一个用例示例是"Apple Universal Links"。
+
+客户端可以包含额外的可选授权请求参数 - 服务器也可以处理它们 - 但不是必需的。参考其他 OAuth 标准和 [IANA OAuth 参数注册表](https://www.iana.org/assignments/oauth-parameters/oauth-parameters.xhtml)。
+
+### 授权码交换证明密钥(PKCE)
+
+PKCE 对所有授权请求都是强制性的。客户端必须为每个授权请求生成新的、唯一的、随机的挑战。授权服务器必须防止在会话之间重用 `code_challenge` 值(至少在合理的时间范围内,如 24 小时期间)。
+
+所有客户端和授权服务器都必须支持 `S256` 挑战方法;详见 [RFC 7636](https://datatracker.ietf.org/doc/html/rfc7636)。不允许使用 `plain` 方法。如果客户端和服务器都支持,理论上可以支持其他方法。
+
+授权服务器应该拒绝重用 `code` 值,并撤销与该 `code` 值早期使用相关的任何未过期的会话和令牌。
+
+### 推送授权请求(PAR)
+
+授权服务器必须支持 PAR,所有类型的客户端都必须使用 PAR 进行授权请求。
+
+授权服务器必须在其服务器元数据文档中将 `require_pushed_authorization_requests` 设置为 `true`,并在 `pushed_authorization_request_endpoint` 中包含有效的 URL。有关此 URL 的要求,请参见 [RFC 9207](https://datatracker.ietf.org/doc/html/rfc9207)。
+
+客户端向 `pushed_authorization_request_endpoint` URL 发出 HTTPS POST 请求,请求参数在表单编码的请求主体中。它们在 JSON 响应对象中收到一个 `request_uri`(不要与 `redirect_uri` 混淆)。当它们将用户重定向到授权端点(`authorization_endpoint`)时,它们省略了已经发送的大多数请求参数,而是将这个 `request_uri` 与 `client_id` 一起作为查询参数包含在内。
+
+<Note>
+PAR 是一个相对较新且支持较少的标准,如果发现使用 PAR 的要求对客户端实现来说太过繁重,可能会放宽这一要求。在这种情况下,授权服务器将需要同时支持 PAR 和非 PAR 请求,而 PAR 对客户端来说是可选的。
+</Note>
+
+### 保密客户端认证
+
+保密客户端在授权请求期间使用 JWT 客户端断言对自己进行认证。授权服务器可以授予保密客户端更长的令牌/会话生命周期。更多上下文请参见"令牌"部分。
+
+要使用的客户端断言类型是 `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`,如"用于 OAuth 2.0 客户端认证和授权授予的 JSON Web 令牌(JWT)配置文件"([RFC 7523](https://datatracker.ietf.org/doc/html/rfc7523))中所述。客户端和授权服务器目前必须支持 `ES256` 加密系统。推荐的系统/算法集预计会随时间演变。
+
+额外要求:
+
+- 保密客户端必须在客户端元数据中发布一个或多个客户端认证密钥(公钥)。这可以是直接的 JWK 格式作为 `jwks` 字段中的 JSON,或者作为由 `jwks_uri` URL 链接的单独 JWKS JSON 对象。`jwks_uri` URL 必须是带有 `https://` 方案的有效完全限定 URL。
+- 保密客户端应该定期轮换客户端密钥,将新密钥添加到 JWKS 集中并用于新会话,然后在不再与任何活动授权会话相关联时删除旧密钥
+- 保密客户端必须在其客户端元数据文档中包含 `token_endpoint_auth_method` 作为 `private_key_jwt`
+- 如果客户端认证密钥被泄露或受损,保密客户端预期立即从其客户端元数据中删除该密钥
+- 授权服务器必须将保密客户端的活动授权会话绑定到会话开始时使用的客户端认证密钥。如果客户端认证密钥在客户端元数据中不存在,服务器应该撤销会话并拒绝进一步的令牌刷新。这意味着授权服务器预期定期重新获取客户端元数据。
+
+## 令牌和会话生命周期
+
+访问令牌用于授权客户端对账户 PDS("资源服务器")的请求。从客户端的角度来看它们是不透明的,但它们通常是包含过期时间的签名 JWT。根据 PDS 实现,在出现泄露事件时可能无法撤销单个访问令牌,因此它们必须限制在相对短的生命周期内。
+
+刷新令牌用于从授权服务器(PDS 或入口服务)请求新令牌(两种类型)。从客户端的角度来看它们也是不透明的。授权会话可以被撤销 - 使刷新令牌无效 - 所以它们可能有更长的生命周期。在 atproto OAuth profile 中,刷新令牌通常是一次性使用,在令牌请求中使用的"新"刷新令牌替换了旧的令牌。这意味着客户端实现可能需要锁定原语来防止并发的令牌刷新请求。
+
+要请求刷新令牌,客户端必须在其客户端元数据中声明 `refresh_token` 作为授权类型。
+
+令牌总是绑定到唯一的会话 DPoP 密钥。令牌不得在客户端设备间共享或重用。它们还必须唯一地绑定到客户端软件(`client_id`)。当访问令牌和刷新令牌不能再使用时,整个会话就结束了。
+
+会话、访问令牌和刷新令牌的具体生命周期取决于授权服务器实现,并可能取决于对客户端类型和声誉的安全评估。
+
+一些指导原则和要求:
+
+- 在所有情况下访问令牌生命周期应少于 30 分钟。如果服务器无法撤销单个访问令牌,则最大值为 15 分钟,建议为 5 分钟。
+- 对于"不受信任的"公开客户端,整体会话生命周期应限制在 7 天内,单个刷新令牌的生命周期应限制在 24 小时内
+- 对于保密客户端,整体会话生命周期可能是无限的。单个刷新令牌的生命周期应限制在 180 天内
+- 保密客户端必须在刷新令牌请求中使用与初始认证请求相同的客户端认证密钥和断言方法
+
+## 证明持有(DPoP)
+
+atproto OAuth profile 规定当向授权服务器发出授权令牌请求和向资源服务器发出授权请求时,所有客户端类型都必须使用 DPoP。详见 [RFC 9449](https://datatracker.ietf.org/doc/html/rfc9449)。
+
+客户端必须在初始授权请求(PAR)中启动 DPoP。
+
+服务器提供的 DPoP nonce 是强制性的。资源服务器和授权服务器可以共享 nonce(尤其是如果它们是同一个服务器),或者它们可以有单独的 nonce。客户端应该按账户会话和服务器跟踪 DPoP nonce。服务器必须定期轮换 nonce,最大生命周期为 5 分钟。服务器可以在任何时间点跨所有客户端会话和多个请求使用相同的 nonce。服务器应该接受最近过期(旧)的 nonce,以使客户端处理多个并发请求时更顺畅。客户端应该能够应对意外的 nonce 更新(以 HTTP 400 错误的形式)并重试那些失败的请求。如果请求包含 DPoP,客户端必须拒绝缺少 `DPoP-Nonce` 标头(不区分大小写)的响应。
+
+客户端必须为每个请求生成和签名一个唯一的 DPoP 令牌(JWT)。每个 DPoP 请求 JWT 必须有一个唯一的(随机生成的)`jti` nonce。服务器应该通过跟踪 `jti` nonce 来防止令牌重放并拒绝重用。它们可以将其客户端生成的 `jti` nonce 历史记录限制在服务器生成的 DPoP nonce 范围内,这样就不需要跟踪无限增长的 nonce 集。
+
+所有客户端和服务器都必须支持 `ES256`(NIST "P-256")加密算法用于 DPoP JWT 签名。推荐使用的算法集预计会随时间演变。客户端和服务器可以实现额外的算法并在元数据文档中声明它们,以促进加密演进和协商。
+
+## 授权服务器
+
+为了支持浏览器应用,授权服务器必须在相关端点上支持 HTTP CORS 请求/头,包括服务器元数据、授权请求(PAR)和令牌请求。
+
+### 服务器元数据
+
+Resource Server (PDS 实例)和 Authorization Server (PDS 或入口服务)都需要在已知的 HTTPS 端点发布元数据文件。
+
+Resource Server (PDS)元数据必须遵循"OAuth 2.0 Protected Resource Metadata"([`draft-ietf-oauth-resource-metadata`](https://datatracker.ietf.org/doc/draft-ietf-oauth-resource-metadata/))草案规范。要求概述:
+
+- URL 路径必须是 `/.well-known/oauth-protected-resource`
+- 响应必须是 HTTP 200(而不是 2xx 或重定向),且必须是带有 `application/json` 内容类型的有效 JSON 对象
+- 必须包含一个 `authorization_servers` 字符串数组,只有一个元素,该元素是完全限定的 URL
+
+Authorization Server URL 可能与 Resource Server (PDS)具有相同的源,也可能指向单独的服务器(例如入口服务)。URL 必须是简单的源 URL:`https` 方案,无凭证(用户名:密码),无路径、查询字符串或片段。允许端口号,但不得包含默认端口(HTTPS 的 443)。
+
+Authorization Server 也发布元数据,遵循"OAuth 2.0 Authorization Server Metadata"([RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414))标准。要求概述:
+
+- URL 路径必须是 `/.well-known/oauth-authorization-server`
+- 响应必须是 HTTP 200(而不是 2xx 或重定向),且必须是带有 `application/json` 内容类型的有效 JSON 对象
+- `issuer`(字符串,必填): Authorization Server 的"源" URL。必须是带有 `https` 方案的有效 URL。允许端口号(如果与源匹配),但不得指定默认端口(HTTPS 的 443)。不得有路径段。必须与用于获取元数据文档本身的 URL 的源匹配。
+- `authorization_endpoint`(字符串,必填):授权重定向的端点 URL
+- `token_endpoint`(字符串,必填):令牌请求的端点 URL
+- `response_types_supported`(字符串数组,必填):必须包含 `code`
+- `grant_types_supported`(字符串数组,必填):必须包含 `authorization_code` 和 `refresh_token`(必须支持刷新令牌)
+- `code_challenge_methods_supported`(字符串数组,必填):必须包含 `S256`(见"PKCE"部分)
+- `token_endpoint_auth_methods_supported`(字符串数组,必填):必须同时包含 `none`(公开客户端)和 `private_key_jwt`(保密客户端)
+- `token_endpoint_auth_signing_alg_values_supported`(字符串数组,必填):不得包含 `none`。目前必须包含 `ES256`。加密算法套件预计会随时间演变。
+- `scopes_supported`(字符串数组,必填):必须包含 `atproto`。如果支持过渡授权,也应在此包含。见"作用域"部分。
+- `authorization_response_iss_parameter_supported`(布尔值):必须为 `true`
+- `require_pushed_authorization_requests`(布尔值):必须为 `true`。见"PAR"部分。
+- `pushed_authorization_request_endpoint`(字符串,必填):必须是 PAR 端点 URL。见"PAR"部分。
+- `dpop_signing_alg_values_supported`(字符串数组,必填):目前必须包含 `ES256`。见"DPoP"部分。
+- `require_request_uri_registration`(布尔值,可选):默认为 `true`;不需要显式设置,但不得为 `false`
+- `client_id_metadata_document_supported`(布尔值,必填):必须为 `true`。见"客户端 ID 元数据"部分。
+
+`issuer`("源")是 Authorization Server 的总体标识符。
+
+### 授权界面
+
+Authorization Server (PDS/入口服务)必须实现一个 web 界面,供用户向服务器进行身份验证、批准(或拒绝)来自客户端的授权请求以及管理活动会话。这称为"授权界面"。
+
+服务器实现可以选择自己的用户认证和账户恢复技术:安全 cookie、电子邮件、各种双因素认证、密钥、外部身份提供商(包括上游 OpenID/OIDC)等。服务器也可能支持用户的多个并发认证会话。
+
+当客户端重定向到 Authorization Server 的授权 URL(声明的 `authorization_endpoint`)时,服务器首先需要验证用户身份。如果没有活动的认证会话,可能会提示用户登录。如果在授权请求中提供了 `login_hint`,可以用它来预填充登录表单。如果有多个活动认证会话,可以提示用户从列表中选择一个,或者使用 `login_hint` 自动选择。如果只有一个活动会话,界面可以移至批准视图,可能带有以其他账户登录的选项。如果提供了 `login_hint`,Authorization Server 应该只允许用户使用该账户进行身份验证。否则当客户端验证账户身份(`sub` 字段)时,整个授权流程将失败。
+
+授权批准提示应标识客户端应用程序并描述所请求的授权范围。
+
+应显示的客户端元数据数量可能取决于客户端是否被 Authorization Server"信任";请参见"客户端"和"安全注意事项"部分。默认情况下应显示完整的 `client_id` URL。
+
+有关作用域选项的描述,请参见"作用域"部分。
+
+如果客户端是保密客户端,并且用户过去已经为同一客户端批准了相同的作用域,Authorization Server 可能允许通过自动批准请求进行"静默登录"。Authorization Server 可以为此流程设置自己的策略:它可能需要明确的用户配置,或者可能需要客户端是"受信任的"。
+
+Authorization Server 应单独实现一个 web 界面,允许已认证用户查看活动的 OAuth 会话并删除它们。
+
+## 授权流程摘要
+
+这是 atproto OAuth 授权流程的高级描述。假设用户已经拥有 atproto 账户。
+
+客户端首先要求用户提供账户标识符(handle 或 DID),或 PDS/入口服务主机名。详见"身份认证"部分。
+
+对于账户标识符,客户端将身份解析为 DID 文档,提取声明的 PDS URL,然后获取 Resource Server 和 Authorization Server 位置。如果从服务器主机名开始,客户端将该主机名解析为 Authorization Server。无论哪种情况,都会获取并验证 Authorization Server 元数据是否符合 atproto OAuth 要求(见"授权服务器"部分)。
+
+客户端接下来通过 HTTP POST 请求进行推送授权请求。见"授权请求"部分;一些值得注意的细节包括:
+
+- 需要一个随机生成的 `state` 令牌,它将用于将此授权请求与后续响应回调关联
+- PKCE 是必需的,因此会生成并存储一个密钥值,并在请求中包含派生的挑战
+- 在此处请求 `scope` 值,且必须包含 `atproto`
+- 对于保密客户端,包含一个 `client_assertion`,类型为 `jwt-bearer`,使用客户端认证密钥签名
+- 客户端为用户/设备/会话生成一个新的 DPoP 密钥,并从 PAR 请求开始使用它
+- 如果认证流程从账户标识符开始,客户端应通过 `login_hint` 字段传递该起始标识符
+- atproto 使用 PAR,因此请求将作为 HTTP POST 请求发送到 Authorization Server
+
+Authorization Server 将收到 PAR 请求并使用 `client_id` URL 解析客户端元数据文档。服务器验证请求和客户端元数据,然后存储会话信息,包括将 DPoP 密钥绑定到会话。服务器通过 HTTP 标头返回 `request_uri` 令牌,包括 DPoP nonce。
+
+客户端接收 `request_uri` 并准备重定向用户。此时,客户端通常需要将会话信息持久化到某种安全存储中,以便在重定向返回后可以读回。这可能是数据库(对于 web 服务后端)或 web 平台存储如 IndexedDB(对于浏览器应用)。然后客户端通过浏览器将用户重定向到 Authorization Server 的认证端点,在 URL 参数中包含 `request_uri`。无论如何,客户端都不得直接在 `state` 请求参数中存储会话数据。
+
+Authorization Server 使用 `request_uri` 查找之前的授权请求参数,对用户进行身份验证(可能包括登录或账户选择),并通过授权界面提示用户。用户可能会细化任何请求的粒度作用域,然后批准或拒绝请求。Authorization Server 将用户重定向回 `redirect_uri`,这可能是 web 回调 URL,或本地应用 URI(对于本地客户端)。
+
+客户端使用 URL 查询参数(`state` 和 `iss`)查找并验证会话信息。使用 `code` 查询参数,客户端然后向 Authorization Server 的令牌端点发出初始令牌请求。客户端通过在 `code_verifier` 字段中包含之前的值来完成 PKCE 流程。保密客户端需要在令牌请求中包含客户端断言 JWT;见"保密客户端"部分。Authorization Server 验证请求并返回一组令牌,以及表示此会话账户标识符(DID)的 `sub` 字段,和所发放访问令牌涵盖的 `scope`。
+
+此时对所有客户端来说至关重要(强制性)的是要验证 `sub` 字段标识的账户与 Authorization Server"issuer"(存在于 `iss` 查询字符串中)一致,方法是验证原始提供的账户 DID,或通过解析账户的 DID 来确认 PDS 与 Authorization Server 一致。见"身份认证"部分。Authorization 始终在 `scopes` 字段中返回为会话批准的作用域(即使它们与请求相同,这是 atproto OAuth profile 的要求),这可能反映用户的部分授权。如果响应中返回的作用域不包含 `atproto`,客户端必须拒绝会话。
+
+仅认证客户端可以在此结束流程。
+
+使用访问令牌,客户端现在可以向 PDS("Resource Server")发出授权请求。它们必须对所有此类请求使用 DPoP,以及访问令牌。令牌(访问和刷新)将需要通过后续向 Authorization Server 令牌端点的请求定期"刷新"。这些也需要 DPoP。详见"令牌和会话生命周期"部分。
+
+## 安全注意事项
+
+在多种情况下,客户端和提供者(服务器)都需要获取外部方提供的 HTTP URL。必须注意防止由于恶意构造的 URL 而导致的有害获取,包括解析为私有或内部 IP 地址的主机名。这类安全问题的一般术语是服务器端请求伪造(SSRF)。还有一类涉及对恶意服务器发出 HTTP 请求的拒绝服务攻击,如巨大的响应主体、TCP 级别的慢速攻击等。我们强烈建议使用"加固的" HTTP 客户端实现/配置来缓解这些攻击。
+
+任何方都可以随时在任何位置创建带有任何内容的客户端和客户端元数据文件。即使 `client_id` 中的主机名也不能完全信任代表整个客户端:不受信任的用户可能能够将客户端元数据文件上传到主机上的任意 URL。特别是,`client_uri`、`client_name` 和 `logo_uri` 字段未经验证,可能被恶意行为者用来冒充合法客户端。强烈建议 Authorization Server 在认证流程中不向最终用户显示未知客户端的这些字段。服务运营商可以维护一个"受信任"的 `client_id` 值列表,并仅为这些应用显示额外的元数据。
+
+## 可能的未来变更
+
+客户端元数据请求(由授权服务器发出)可能由于多种原因失败:瞬时网络中断、客户端服务器进行常规维护等。Authorization Server 在这种情况下立即撤销对活动客户端会话的访问似乎不够稳健。也许应该有一个明确的宽限期?
+
+资源服务器元数据只能有一个指向授权服务器的 URL 引用的要求可能会放宽。
+
+关于会话和令牌生命周期的详细信息可能会随着进一步的安全审查而改变。

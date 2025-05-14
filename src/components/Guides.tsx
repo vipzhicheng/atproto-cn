@@ -8,6 +8,28 @@ interface Guide {
 }
 
 const lang_guides: Record<string, Guide[]> = {
+  cn: [
+    {
+      href: '/guides/applications',
+      name: '快速开始',
+      description: '创建一个应用并开始构建。',
+    },
+    {
+      href: '/guides/self-hosting',
+      name: '自托管',
+      description: '了解如何搭建你自己的个人数据服务器。',
+    },
+    {
+      href: '/guides/glossary',
+      name: '术语表',
+      description: 'AT Protocol 中所有术语的定义。',
+    },
+    {
+      href: '/guides/faq',
+      name: '常见问题',
+      description: '关于 Atmosphere 的常见问题解答。',
+    },
+  ],
   en: [
     {
       href: '/guides/applications',

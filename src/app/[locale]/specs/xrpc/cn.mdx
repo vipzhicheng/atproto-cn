@@ -1,0 +1,205 @@
+export const metadata = {
+  title: 'HTTP API (XRPC)',
+  description:
+    '跨系统的 HTTP 查询与过程调用',
+}
+
+# HTTP API（XRPC）
+
+atproto 的客户端-服务器和服务器-服务器 HTTP API 使用一套称为 XRPC 的通用约定。端点路径名称包含一个 NSID，指向指定请求和响应模式的 [Lexicon](/specs/lexicon)，通常使用 JSON 内容类型。{{ className: 'lead' }}
+
+## Lexicon HTTP 端点
+
+HTTP 请求路径以 `/xrpc/` 开头，后跟一个 NSID。路径必须始终为顶级路径，不能有前缀。NSID 映射到关联 Lexicon 中的 `id` 字段。
+
+Lexicon 中可表达的两种请求类型为 “query”（HTTP GET）和 “procedure”（HTTP POST）。遵循 HTTP REST 语义，query（GET）可缓存且不应改变资源状态。procedure 不可缓存且可能改变状态。
+
+Lexicon 的 `params`（在 `parameters` 字段下）映射为 HTTP URL 查询参数。只有特定 Lexicon 类型可包含在 params 中，具体见 `params` 类型。可使用多个同名查询参数表示参数数组。编码 `boolean` 参数时，应使用字符串 `true` 和 `false`。字符串不应加引号。如果 schema 中包含 `default` 值，应在每次请求中都包含，以确保缓存行为一致。
+
+请求和响应体的内容类型可在 Lexicon 中指定。schema 可要求精确的 MIME 类型，或使用 blob 模式指示可接受类型的范围（如 `image/*`）。
+
+JSON 请求体 schema 使用 atproto 通用数据模型在 Lexicon 中指定。服务器或客户端要完全校验需了解 Lexicon，但始终可根据抽象数据模型做部分校验。
+
+鼓励支持 CORS，但不是强制要求。
+
+### 错误响应
+
+所有非成功响应应遵循标准错误响应 schema。`Content-Type` 应为 `application/json`，payload 应为包含以下字段的 JSON 对象：
+
+- `error`（string，必需）：错误类型名称（ASCII 常量，无空格）
+- `message`（string，可选）：适合展示给用户的错误描述
+
+错误类型应映射到端点 Lexicon schema 中定义的错误名称。这便于客户端软件做更具体的错误处理。特别建议在 `400`、`500` 和 `502` 状态码时提供详细信息。
+
+### Blob 上传与下载
+
+Blob 是一种特殊情况，因为其可为任意 MIME 类型且不直接存储于仓库，因此不直接关联 NSID 或 Lexicon（但最终会被 Lexicon 引用）。
+
+处理 blob 的惯例是客户端通过 `com.atproto.repo.uploadBlob` 端点上传，返回一个包含 CID 和基本元数据的 `blob` JSON 对象。客户端可在后续请求中包含该 `blob` 数据（如新建记录时）。如 MIME 类型和文件大小等约束仅在第二步校验。服务器可在上传时做内容类型嗅探，并返回与请求头 `Content-Type` 不同的 MIME 类型，但上传请求仍需包含 `Content-Type` 头。
+
+可通过 `com.atproto.sync.*` NSID 空间的端点列出和下载某账户的 blob。这些端点可访问上传时的完整原始 blob。常见做法是应用通过单独的 URL（如 CDN）镜像原始 blob 及其缩略图或预览版本，而不是深链到原始 PDS 的 `getBlob` 端点。
+
+### 游标与分页
+
+Lexicon 设计中常见做法是包含 `cursor` 参数用于分页。客户端首次请求不应包含 `cursor` 参数，且每次请求的其他参数应保持不变。如果响应中包含 cursor，后续请求可带上该值，直到响应不再包含 cursor，表示结果集已结束。
+
+## 认证
+
+XRPC 的主要客户端/服务器认证与授权机制为 OAuth，详见 [Auth Specification](./oauth)。
+
+并非所有端点都要求认证，目前尚无一致方式枚举哪些端点需要认证。
+
+还存在一种遗留认证方案，使用带 JWT token 的 HTTP Bearer 认证，包括 refresh token，具体如下。初次登录使用 `com.atproto.server.createSession` 端点，提交密码和账户标识（如 handle 或注册邮箱），返回 `refreshJwt`（以及初始 `accessJwt`）。
+
+大多数请求应使用 access JWT 认证，但该 token 有较短有效期。每隔几分钟，可通过 `com.atproto.server.refreshSession` 端点用 refresh JWT 换取新的 access JWT。
+
+客户端应将 token 视为不透明字符串：JWT 字段和语义不是规范的稳定部分。
+
+生成和校验 auth JWT 的服务器（如 PDS 实现）应对 access 和 refresh token 做域隔离，使用 `typ` header 字段：access token 用 `at+jwt`，refresh token 用 `refresh+jwt`。注意 `at+jwt`（定义见 [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068.html)）意为 “access token”，与 atproto 的 “at” 无关。
+
+### App Passwords
+
+App Passwords（应用密码）用于降低第三方客户端和 Web 应用登录时的安全风险。账户可创建和撤销独立于主密码的 app password。登录方式与主密码一致，但对客户端应用权限略有限制，禁止如账户或认证设置（包括 app password 本身）等破坏性操作。
+
+客户端和应用无需特殊处理即可使用 app password。最佳实践是在登录时提醒用户使用 app password。app password 通常格式为 `xxxx-xxxx-xxxx-xxxx`，客户端可据此格式校验，防止误用主密码（除非主密码本身也为此格式）。
+
+### 管理员 Token（临时规范）
+
+部分管理类 XRPC 端点需管理员权限认证。当前方案是用 HTTP Basic 认证，用户名为 "admin"，密码字段为固定 token，而不是用 JWT 的 HTTP Bearer 认证。这意味着管理员请求仅有 “admin” 身份标识。
+
+提醒：HTTP Basic 认证通过用冒号（`:`）拼接用户名和密码，并用 `base64`（标准版）编码，编码结果加上 `Basic ` 前缀（有空格）放入 `Authorization` 头。
+
+例如，若管理员 token 为 `secret-token`，请求头如下：
+
+
+```
+Authorization: Basic YWRtaW46c2VjcmV0LXRva2Vu
+```
+
+需要管理员身份验证的端点集合在本规范中可能会过时，但当前包括：
+
+* `com.atproto.admin.*`
+* `com.atproto.server.createInviteCode`
+* `com.atproto.server.createInviteCodes`
+
+### 服务间身份验证（JWT）
+
+本节描述了一个通过签名的 JWT 进行服务间身份验证的机制。
+
+当前机制是使用由账户的 atproto 签名密钥签名的短期 JWT。接收服务可以通过检查该密钥与账户的 DID 文档来验证签名。
+
+JWT 参数如下：
+
+* `alg` 头字段（字符串，必需）：指示签名密钥类型（见 [Cryptography](/specs/cryptography)）
+
+  * 对于 `k256` 密钥，使用 `ES256K`
+  * 对于 `p256` 密钥，使用 `ES256`
+* `typ` 头字段（字符串，必需）：当前为 `JWT`，但计划更新为更具体的值。
+* `iss` 正文字段（字符串，必需）：请求所代表的账户 DID。此字段可能包括后缀服务标识符；见下文
+* `aud` 正文字段（字符串，必需）：与请求目标服务关联的服务 DID
+* `exp` 正文字段（数字，必需）：令牌过期时间，以 UNIX 时间戳表示，精确到秒。应为较短的时间窗口，因为未实现撤销。60 秒是一个合适的令牌有效期。
+* `iat` 正文字段（数字，必需）：令牌创建时间，以 UNIX 时间戳表示，精确到秒。
+* `lxm` 正文字段（字符串，选项）：缩写为“lexicon method”。NSID 语法。表示此令牌授权的端点。服务器在包含此字段时必须始终验证此字段，并且应要求其在安全敏感操作中使用。未来可能会成为必需项。
+* `jti` 正文字段（字符串，必需）：唯一的随机字符串 nonce。接收服务可使用此字段防止令牌的重用和重放攻击。
+* JWT 签名（字符串，必需）：使用账户 DID 的签名密钥生成的 base64url 编码签名。
+
+当令牌在发行方的 DID 文档上下文中生成时，`iss` 字段中可能包含相应的 *服务* 标识符，两个部分由 `#` 字符分隔。例如，`did:web:label.example.com#atproto_labeler` 代表一个标签服务。当包含此标识符时，适当的签名密钥将根据服务标识符与密钥标识符的固定映射来确定：
+
+* 服务标识符 `atproto_labeler` 映射到密钥标识符 `atproto_label`
+
+如果未包含服务标识符，则范围是通用的，应使用 `atproto` 密钥标识符。
+
+接收服务可能会要求或禁止特定的服务标识符，以便访问特定的资源或端点。
+
+签名使用常规的 JWT 过程进行计算，使用账户的签名密钥（即用于签署仓库提交的相同密钥）。作为 Typescript 伪代码，它看起来像这样：
+
+```
+const headerPayload = utf8ToBase64Url(jsonStringify(header)) + '.' + utf8ToBase64Url(jsonString(body))
+const signature = hashAndSign(accountSigningKey, utf8Bytes(headerPayload))
+const jwt = headerPayload + '.' + bytesToBase64Url(signature)
+```
+
+## 服务代理
+
+PDS 充当客户端和其他 atproto 服务之间的通用代理。客户端可以使用 HTTP 头指定他们希望请求转发到网络中的哪个服务（例如，特定的 AppView 或 Labeler 服务）。PDS 将进行一些安全检查，然后使用由用户身份签发并签名的服务间身份验证令牌（JWT）将请求转发给目标服务。
+
+HTTP 头为 `atproto-proxy`，其值是一个 DID（标识服务），后跟一个服务端点标识符，由 `#` 字符连接。PDS 解析服务 DID，从 DID 文档中提取服务端点 URL，并将请求代理到识别出的服务器。
+
+例如，代理到标签服务的请求头如下所示：
+
+```
+atproto-proxy: did:web:labeler.example.com#atproto_labeler
+```
+
+代理请求时，必须满足以下一些要求。未来可能会扩展这些条件，以解决网络滥用问题。
+
+* 目标服务必须有可解析的 DID、格式正确的 DID 文档，并且具有匹配标识符的相应服务条目
+* 仅支持 atproto 端点路径。这意味着 `/xrpc/` 前缀，后跟有效的 NSID 和端点名称。请注意，`/xrpc/` 前缀未来可能可以配置
+* 请求必须来自在 PDS 上具有活动账户的已认证用户
+* PDS 仍然适用速率限制
+
+## HTTP 头总结
+
+客户端可以使用以下请求头：
+
+`Content-Type`：如果请求主体存在，应该包含此头，并指明内容类型。
+
+`Authorization`：包含身份验证信息。有关详细信息，请参见本规范中的“身份验证”部分。
+
+`atproto-proxy`：用于代理到其他 atproto 服务。详细信息请见本文件中的“服务代理”部分。
+
+`atproto-accept-labelers`：由客户端使用，以请求将特定标签应用于响应中。详见 [Label](/specs/label) 规范。
+
+## HTTP 状态码总结
+
+`200 OK`：请求成功。如果有响应主体（可选），应包含 `Content-Type` 头。
+
+`400 Bad Request`：请求无效，未被处理。
+
+`401 Unauthorized`：此端点需要身份验证。应包含 `WWW-Authenticate` 头。
+
+`403 Forbidden`：客户端没有访问此端点的权限。
+
+`404 Not Found`：可以指示缺失的资源。也可以指示服务器不支持 atproto，或者不支持此端点。请参见响应错误消息（或没有错误消息）以澄清。
+
+`413 Payload Too Large`：请求主体太大。如有可能，请拆分成多个较小的请求。
+
+`429 Too Many Requests`：资源限制已超出，客户端应暂停。可能会有 `Retry-After` 头，指示特定的回退时间段。
+
+`500 Internal Server Error`：通用的内部服务错误。客户端可以在延迟后重试。
+
+`501 Not Implemented`：指定的端点已知，但未实现。客户端*不*应重试。特别是，当请求 WebSockets 时，如果服务器未实现此功能，将返回此状态。
+
+`502 Bad Gateway`、`503 Service Unavailable` 或 `504 Gateway Timeout`：这些通常表示临时或永久的服务停机。客户端可以在延迟后重试。
+
+## 使用和实现指南
+
+鼓励客户端实现超时、有限的重试和随机指数退避。这在不可避免的间歇性停机情况下增加了稳健性，同时减少了对负载较重服务器的压力。
+
+服务器*应*为所有具有 `/xrpc/` 路径前缀的请求实现自定义的 JSON 错误响应，但实际上，许多服务将返回通用的负载均衡器或反向代理 HTML 错误页面。客户端应具备应对非 JSON 错误响应的能力。
+
+HTTP 服务器和客户端库通常限制 URL 的整体大小，包括查询参数，而这些限制会约束 XRPC 参数的使用。
+
+PDS 实现可以根据需要限制 blob 上传。例如，它们可以设置全局最大大小或允许的 MIME 类型的限制。这些限制应是所有支持的 Lexicons 的 blob 限制的超集。
+
+## 安全性和隐私考虑
+
+仅应使用 HTTPS 进行公开互联网通信。
+
+在上传的 blob 中应小心个人身份信息，例如 EXIF 元数据。目前，*客户端*有责任在上传前剥离任何敏感的 EXIF 元数据。PDS 也可以帮助防止意外的元数据泄漏；参见下文的未来更改部分。
+
+## 可能的未来更改
+
+身份验证系统可能会完全重新设计。
+
+Lexicons 应能够指示是否需要身份验证。
+
+PDS 作为通用网关的角色可能会被正式化和扩展。可能会添加一个通用机制，用于将特定的 XRPC 端点代理到其他网络服务。可能会指定对查询和 blob 的通用缓存。PDS 可能会显式允许修改第三方响应。
+
+是否支持 HTTP 重定向的明确决定。
+
+当返回游标，但结果列表为空，或当游标值重复时，应澄清游标分页行为。
+
+为了防止意外发布嵌入在媒体 blob 中的敏感元数据，可能会在上传 blob 端点中添加一个查询参数，以选择退出元数据剥离，并默认阻止上传或自动剥离所有 blob 的此类元数据。
+
+`lxm` JWT 字段用于服务间身份验证，未来可能会成为必需项。

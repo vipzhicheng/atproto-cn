@@ -1,0 +1,112 @@
+export const metadata = {
+  title: 'Record Key',
+  description:
+    '集合中单个记录的标识符',
+}
+
+# Record Keys (记录键)
+
+**Record Key**（简称 `rkey`）用于在 atproto 仓库的同一集合中命名和引用单个记录。它最终会成为 AT URI 的一个片段，以及仓库 MST 路径的一部分。{{ className: 'lead' }}
+
+支持几种不同的 Record Key 命名方案。每个记录的 Lexicon schema 都会指明应该使用哪种 record key 类型，这取决于记录集合的需求和语义。{{ className: 'lead' }}
+
+
+### Record Key 类型: `tid`
+
+这是最常见的记录命名方案，使用 [TID（"timestamp identifier"时间戳标识符）语法](/specs/tid)，例如 `3jzfcijpj2z2a`。TID 通常在创建记录时根据本地时钟生成，并具有一些额外机制来确保它们始终递增，且在给定仓库的同一集合中不会被重用或重复。
+
+如果记录使用 TID record key，可以推断出记录的原始创建时间戳，但请记住这些键可以由最终用户指定且可以是任意值，因此不应该被信任。
+
+同一个 TID 可以用于同一仓库中不同集合的记录。这通常表明两个记录之间存在某种关系（例如，"sidecar"扩展记录）。
+
+TID 方案的一个早期动机是为记录提供松散的时间顺序，这提高了仓库数据结构（MST）的存储效率。
+
+### Record Key 类型: `nsid`
+
+用于 record key 必须是有效的 [NSID](/specs/nsid) 的情况。
+
+### Record Key 类型: `literal:<value>`
+
+当集合中应该只有一个具有固定、众所周知的 Record Key 的记录时，使用此键类型。
+
+最常见的值是 `self`，在 Lexicon schema 中指定为 `literal:self`。
+
+### Record Key 类型: `any`
+
+允许使用任何满足整体 Record Key schema 要求（见下文）的字符串。这是最灵活的 Record Key 类型。
+
+这可以用于在名称中编码语义，例如，域名、整数或（转换后的）AT URI。这实现了重复数据删除和已知 URI 查找。
+
+
+### Record Key 语法
+
+Lexicon 字符串类型：`record-key`
+
+无论类型如何，Record Keys 必须满足一些基本语法约束：
+
+- 仅限于 ASCII 字符的子集 — 允许的字符是字母数字（`A-Za-z0-9`）、句点、破折号、下划线、冒号或波浪线（`.-_:~`）
+- 必须至少有 1 个字符且最多 512 个字符
+- 不允许使用特定的 record key 值 `.` 和 `..`
+- 必须是仓库 MST 路径字符串的允许部分（上述约束满足此条件）
+- 必须允许包含在 URI 的路径组件中（遵循 RFC-3986 第 3.3 节）。上述约束通过匹配通用 URI 路径中允许的"未保留"字符来满足此条件。
+
+Record Keys 区分大小写。
+
+
+### 示例
+
+有效的 Record Keys:
+
+```
+3jui7kd54zh2y
+self
+example.com
+~1.2-3_
+dHJ1ZQ
+pre:fix
+_
+```
+
+无效的 Record Keys:
+
+```
+alpha/beta
+.
+..
+#extra
+@handle
+any space
+any+space
+number[3]
+number(3)
+"quote"
+dHJ1ZQ==
+```
+
+### 使用和实现指南
+
+实现时不应依赖 TID 的全局唯一性，也不应将 TID 时间戳视为实际的记录创建时间戳。Record Keys 是"用户可控数据"，可能被恶意账户任意指定。
+
+大多数处理仓库和记录的软件应该对 Record Key 类型和值保持中立，通常将其视为简单字符串。例如，依赖 TID 键解码为 `base32` 格式的唯一 `uint64` 来作为数据库键是很诱人的，但这样做不利于键格式的变更，因此不推荐。
+
+注意，在仓库上下文中，同一个 Record Key 值可以用于多个集合。`(did, rkey)` 元组不是唯一的；`(did, collection, rkey)` 元组才是唯一的。
+
+作为最佳实践，在几乎所有情况下都应将键路径保持在 80 个字符以下。
+
+冒号字符在 2023 年的参考实现中实际上是被允许的，该规范在 2024 年 2 月更新以允许使用此字符。
+
+注意，"大多数" DID 可以作为 record key，但完整的 DID W3C 规范允许 DID 包含其他字符。这意味着在撰写本文时可以使用 DID 作为 record key，并且这对当前"认可的" DID 方法有效（注意 `did:web` 在 atproto 中仅限于完整域名，不包括路径或端口规范），但在未来使用不同的 DID 方法或允许 DID 特性（如 `did:web` 路径）时可能会出现问题。
+
+虽然 Record Keys 区分大小写，但建议使用全小写的 Record Keys，以避免混淆并最大化在不区分大小写的上下文中的可重用性。
+
+### 未来可能的变更
+
+Record Key 语法的约束可能会在未来放宽，以允许非 ASCII Unicode 字符。Record keys 将始终是有效的 Unicode，永远不会放宽到允许任意字节字符串。
+
+可能会定义其他 Record Key 类型。
+
+最大长度可能会调整。
+
+`%` 字符保留用于可能的 URL 编码，但请注意目前不支持此类编码。
+
+可能会添加对通用语法的其他约束。例如，要求至少包含一个字母数字字符。

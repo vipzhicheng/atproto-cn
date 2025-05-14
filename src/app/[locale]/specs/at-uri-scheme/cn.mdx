@@ -1,0 +1,152 @@
+export const metadata = {
+  title: 'AT URI 方案(at://)',
+  description:
+    '用于定位 ATP 仓库数据的 URI 方案。',
+}
+
+# AT URI 方案（at://）
+
+AT URI 方案（`at://`）使得可以轻松引用特定仓库中的单个记录，该仓库由 DID 或 handle 标识。AT URI 也可以用于引用仓库中的集合，或整个仓库（即身份）。{{ className: 'lead' }}
+
+以下两个 AT URI 都引用了同一个仓库中的同一条记录；一个使用账户的 DID，另一个使用账户的 handle。
+
+- `at://did:plc:44ybard66vv44zksje25o7dz/app.bsky.feed.post/3jwdwj2ctlk26`
+- `at://bnewbold.bsky.team/app.bsky.feed.post/3jwdwj2ctlk26`
+
+<Note>
+**基于 Handle 的 AT URI 的注意事项**
+
+引用 handle 的 AT URI 并不持久。
+
+如果用户更改了他们的 handle，任何使用该 handle 的 AT URI 都会失效，并且如果 handle 被复用，可能会指向另一个仓库中的记录。
+
+AT URI 不是内容寻址的，因此它们引用的记录的 _内容_ 也可能随时间发生变化。
+</Note>
+
+### 结构
+
+AT URI 的完整通用结构如下：
+
+```text
+"at://" AUTHORITY [ PATH ] [ "?" QUERY ] [ "#" FRAGMENT ]
+```
+
+**authority** 部分可以是 handle 或 DID，表示与仓库关联的身份。请注意，handle 可能会随着时间指向不同的 DID（也就是不同的仓库）。关于强引用的讨论见下文以及“使用与实现”部分。
+
+在当前 atproto Lexicon 的用法中，**query** 和 **fragment** 部分尚未被支持，路径也只允许固定的模式：
+
+
+```text
+"at://" AUTHORITY [ "/" COLLECTION [ "/" RKEY ] ]
+```
+
+**authority** 部分是必需的，必须规范化，并且如果是 DID，则必须是“受信任”的 DID 方法之一。路径中可选的 **collection** 部分必须是规范化的 [NSID](./nsid)。路径中可选的 **rkey** 部分必须是有效的 [Record Key](./record-key)。
+
+指向仓库中特定记录的 AT URI 并不是一种*强引用*，因为它不是内容寻址的。该记录可能会随着时间发生更改或被移除，DID 本身也可能被删除或不可用。对于 `did:web`，DID（以及仓库）的控制权可能会发生变化。对于 authority 部分为 handle 的 AT URI，handle 到 DID 的映射也可能发生变化。
+
+AT URI 与常见的 URL 格式（如 `https://`、`ftp://` 或 `wss://`）之间的一个主要语义区别在于，AT URI 的 "authority" 部分并不表示所指资源的网络位置。即使 authority 部分是 handle，主机名也仅用于身份查找，通常并不是仓库内容的最终主机（即 handle 主机名通常不是 PDS 主机）。
+
+### 通用 URI 兼容性
+
+AT URI 符合 IETF [RFC-3986](https://www.rfc-editor.org/rfc/rfc3986) 中定义的通用资源标识符（URI）通用语法。它们利用了该文档中概述的一些通用 URI 特性，但并非全部。以下是通用 URI 部分和特性的总结：
+
+- authority 部分，以双斜杠开头：支持
+- 空的 authority 部分：不支持
+- 用户信息（userinfo）：当前不支持，但保留用于将来。handle 前带有单独的 `@` 字符无效（例如，`at://@handle.example.com` 无效）
+- 主机和端口分隔：不支持。语法与 authority 部分为 DID 时冲突
+- 路径部分：支持，可选
+- 查询（query）：通用语法支持，目前未使用
+- 片段（fragment）：通用语法支持，目前未使用
+- 相对引用：尚未支持
+- 规范化规则：通用语法支持，目前未使用
+
+AT URI 不符合 WHATWG URL 标准（[https://url.spec.whatwg.org/](https://url.spec.whatwg.org/)）。该标准不允许 authority 部分 DID 中未编码的冒号字符。注意，可以明确区分 authority 部分的 DID 和 `host:port` 对。DID 总是至少包含两个冒号，总是以 `did:` 开头，并且 DID 方法不能包含数字。
+
+### 完整 AT URI 语法
+
+AT URI 的完整语法灵活，适用于多种未来用例，包括路径结构、查询参数和片段部分的未来扩展。完整语法规则如下：
+
+- 整体 URI 限制为 ASCII 字符子集
+- 参考下方，未保留字符集（见 [RFC-3986](https://www.rfc-editor.org/rfc/rfc3986)）包括字母数字（`A-Za-z0-9`）、句点、连字符、下划线和波浪线（`.-_~`）
+- 最大总长度为 8 KB（未来可能缩短）
+- 允许对字符进行十六进制编码（但实际上通常不需要）
+- URI scheme 为 `at`，并且始终需要以双斜杠开头的 authority 部分，因此 URI 总是以 `at://` 开头
+- authority 部分是必需且不能为空。authority 可以是 atproto Handle，也可以是符合 atproto 使用限制的 DID。注意，authority 部分不能被解释为 host:port 对，因为 DID 中使用了冒号（`:`）。DID 中的冒号和未保留字符不应被转义，但其他保留字符（包括 `#`、`/`、`$`、`&`、`@`）必须转义。
+  - 注意，目前 atproto 所有“受信任”的 DID 方法都不允许这些字符出现在 DID 标识符中
+- authority 后可选路径部分。路径可以包含多个由单斜杠（`/`）分隔的段。可使用通用 URI 路径规范化规则。
+- 可选查询部分，遵循通用 URI 语法限制
+- 可选片段部分，使用 JSON Path 语法
+
+### 受限 AT URI 语法
+
+目前在 Lexicon 的 `at-uri` 类型中使用的是受限子集的有效 AT URI。查询参数和片段目前未使用。不允许有结尾斜杠，包括 authority 后没有其他路径的结尾斜杠。URI 应为规范化形式（见“规范化”部分），其中所有子标识符也应规范化。
+
+
+```text
+AT-URI        = "at://" AUTHORITY [ "/" COLLECTION [ "/" RKEY ] ]
+
+AUTHORITY     = HANDLE | DID
+COLLECTION    = NSID
+RKEY          = RECORD-KEY
+```
+
+
+### 规范化
+
+特别是在 atproto 记录中引用时，应遵循严格的规范化，以确保表示具有可重现性，并且可以通过简单的字符串相等性检查进行比较。
+
+- URI 的任何部分都不应有不必要的十六进制编码
+- 任何十六进制编码的字符必须为大写
+- URI scheme 必须小写
+- authority 为 handle 时：小写
+- authority 为 DID 时：需为规范化形式，且不能重复十六进制编码。例如，如果 DID 已经被十六进制编码，不要再次对百分号进行编码
+- 路径部分不能有结尾斜杠
+- 路径部分不能有重复斜杠或“点”段（例如 `/./` 或 `/abc/../`）
+- 路径中的 NSID：域名 authority 部分小写
+- Record Key 区分大小写且不做规范化
+- 在 Lexicon 记录中引用仓库或记录时，不应包含查询（query）和片段（fragment）部分
+
+通用路径规范化和去除 `..` / `.` 相对引用的规则请参考 [RFC-3986](https://www.rfc-editor.org/rfc/rfc3986)。
+
+### 示例
+
+有效的 AT URI（通用和 Lexicon 语法）：
+
+```text
+at://foo.com/com.example.foo/123
+```
+
+有效的通用 AT URI 语法，但在当前 Lexicon 中无效：
+
+```text
+at://foo.com/example/123     // invalid NSID
+at://computer                // not a valid DID or handle
+at://example.com:3000        // not a valid DID or handle
+```
+
+无效的 AT URI（在两种语境下均无效）
+
+```text
+at://foo.com/                // trailing slash
+at://user:pass@foo.com       // userinfo not currently supported
+```
+
+
+### 使用与实现指南
+
+通用的 URI 和 URL 解析库有时可以用于 AT URI，但并非总是如此。一个关键要求是能够将 authority（或 origin）部分作为简单字符串处理，而不是被解析为 userinfo、host 和 port 子部分。具体来说：Python 3 的 `urllib` 标准库可以正常工作；Javascript 的 `url-parse` 包可以正常工作；Golang 的 `net/url` 包无法正常工作；大多数流行的 Rust URL 解析 crate 也无法正常工作。
+
+在引用记录时，尤其是引用其他仓库的记录时，最佳实践是在 authority 部分使用 DID，而不是 handle。对于应用展示，可以使用 handle 作为更易读的替代。在 HTML 中，*显示* handle 版本的 AT-URI 并 *链接*（`href`）到 DID 版本是允许的。
+
+当需要对其他记录进行*强引用*时，最佳实践是同时使用 CID 哈希和 AT URI。
+
+在 Lexicon（API、记录及其他上下文）中，有时需要特定变体的 AT URI，而不仅仅是通用的 `at-uri` 字符串格式。例如，从记录内部引用其他记录时，通常要求 authority 部分为 DID，并且 URI 必须包含 collection 和 rkey 路径段。不满足这些条件的 URI 将无法通过校验。
+
+不要混淆 JSON Path 片段语法与 Lexicon 引用语法。它们都使用基于 `#` 的片段来引用 JSON 文档中的其他字段，但例如，JSON Path 语法以斜杠开头（如 `#/key`）。
+
+### 未来可能的变更
+
+最大长度限制可能会发生变化。
+
+在 Lexicon 的 `at-uri` 字段中，未来可能支持相对引用。例如，一个记录引用同一仓库中的其他记录时，可以使用 `../<collection>/<rkey>` 的相对路径语法。
+

@@ -1,0 +1,263 @@
+export const metadata = {
+  title: 'Lexicon',
+  description:
+    '一个基于模式驱动的互操作性框架',
+}
+
+# Lexicon 简介
+
+Lexicon 是一个模式系统，用于定义 RPC 方法和记录类型。每个 Lexicon 模式都以 JSON 编写，格式类似于 [JSON-Schema](https://json-schema.org/)，用于定义约束。
+
+这些模式使用 [NSID](/specs/nsid) 标识，NSID 是一种反向 DNS 格式。以下是一些示例 API 端点：
+
+
+```
+com.atproto.repo.getRecord
+com.atproto.identity.resolveHandle
+app.bsky.feed.getPostThread
+app.bsky.notification.listNotifications
+```
+
+以下是一些示例记录类型：
+
+```
+app.bsky.feed.post
+app.bsky.feed.like
+app.bsky.actor.profile
+app.bsky.graph.follow
+```
+
+模式类型、定义语言和验证约束在 [Lexicon 规范](/specs/lexicon) 中描述，JSON 和 CBOR 中的表示在 [数据模型规范](/specs/data-model) 中描述。
+
+## 为什么需要 Lexicon？
+
+**互操作性。** 像 atproto 这样的开放网络需要一种就行为和语义达成一致的方式。Lexicon 解决了这个问题，同时让开发人员相对简单地引入新模式。
+
+**Lexicon 不是 RDF。** 虽然 RDF 在描述数据方面很有效，但它并不适合强制执行模式。Lexicon 更易于使用，因为它不需要 RDF 提供的通用性。事实上，Lexicon 的模式支持代码生成，包括类型和验证，这让生活变得更加轻松！
+
+## HTTP API 方法
+
+AT 协议的 API 系统 [XRPC](/specs/xrpc) 本质上是 HTTPS 的一个薄封装。例如，调用：
+
+
+```typescript
+com.example.getProfile()
+```
+
+实际上只是一个 HTTP 请求：
+
+```text
+GET /xrpc/com.example.getProfile
+```
+
+这些模式建立了有效的查询参数、请求正文和响应正文。
+
+```json
+{
+  "lexicon": 1,
+  "id": "com.example.getProfile",
+  "defs": {
+    "main": {
+      "type": "query",
+      "parameters": {
+        "type": "params",
+        "required": ["user"],
+        "properties": {
+           "user": { "type": "string" }
+        },
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["did", "name"],
+          "properties": {
+            "did": {"type": "string"},
+            "name": {"type": "string"},
+            "displayName": {"type": "string", "maxLength": 64},
+            "description": {"type": "string", "maxLength": 256}
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+通过代码生成，这些模式变得非常易于使用：
+
+```typescript
+await client.com.example.getProfile({user: 'bob.com'})
+// => {name: 'bob.com', did: 'did:plc:1234', displayName: '...', ...}
+```
+
+## 记录类型
+
+模式定义了记录的可能取值。每个记录都有一个“type”，它映射到一个模式，并且还确定了记录的 URL。
+
+例如，这个“follow”记录：
+
+```json
+{
+  "$type": "com.example.follow",
+  "subject": "at://did:plc:12345",
+  "createdAt": "2022-10-09T17:51:55.043Z"
+}
+```
+
+...会有一个类似如下的 URL：
+
+```text
+at://bob.com/com.example.follow/12345
+```
+
+...而类似这样的模式：
+
+```json
+{
+  "lexicon": 1,
+  "id": "com.example.follow",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A social follow",
+      "record": {
+        "type": "object",
+        "required": ["subject", "createdAt"],
+        "properties": {
+          "subject": { "type": "string" },
+          "createdAt": {"type": "string", "format": "datetime"}
+        }
+      }
+    }
+  }
+}
+```
+
+## Tokens
+
+Token（令牌）声明了可以在数据中使用的全局标识符。
+
+假设一个记录模式需要指定红灯、黄灯和绿灯三种可能的交通信号灯状态：
+
+
+```json
+{
+  "lexicon": 1,
+  "id": "com.example.trafficLight",
+  "defs": {
+    "main": {
+      "type": "record",
+      "record": {
+        "type": "object",
+        "required": ["state"],
+        "properties": {
+          "state": { "type": "string", "enum": ["red", "yellow", "green"] },
+        }
+      }
+    }
+  }
+}
+```
+
+这完全可以接受，但它不具备可扩展性。你无法添加新的状态，比如“flashing yellow（闪烁黄灯）”或“purple（紫灯）”（谁知道呢，也许以后会有）。
+
+为了增加灵活性，你可以移除 enum 约束，仅通过文档说明可能的取值：
+
+```json
+{
+  "lexicon": 1,
+  "id": "com.example.trafficLight",
+  "defs": {
+    "main": {
+      "type": "record",
+      "record": {
+        "type": "object",
+        "required": ["state"],
+        "properties": {
+          "state": {
+            "type": "string",
+            "description": "Suggested values: red, yellow, green"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+这并不是很糟，但它缺乏明确性。不同的人为 state 发明新值时很容易发生冲突，而且每个状态也没有清晰的文档说明。
+
+相反，你可以为你使用的值定义 Lexicon token：
+
+```json
+{
+  "lexicon": 1,
+  "id": "com.example.green",
+  "defs": {
+    "main": {
+      "type": "token",
+      "description": "Traffic light state representing 'Go!'.",
+    }
+  }
+}
+{
+  "lexicon": 1,
+  "id": "com.example.yellow",
+  "defs": {
+    "main": {
+      "type": "token",
+      "description": "Traffic light state representing 'Stop Soon!'.",
+    }
+  }
+}
+{
+  "lexicon": 1,
+  "id": "com.example.red",
+  "defs": {
+    "main": {
+      "type": "token",
+      "description": "Traffic light state representing 'Stop!'.",
+    }
+  }
+}
+```
+
+这为我们的 trafficLight state 提供了明确的取值。最终的模式依然采用灵活的校验方式，但其他团队可以更清楚地了解这些值的来源，以及如何添加自己的取值：
+
+
+```json
+{
+  "lexicon": 1,
+  "id": "com.example.trafficLight",
+  "defs": {
+    "main": {
+      "type": "record",
+      "record": {
+        "type": "object",
+        "required": ["state"],
+        "properties": {
+          "state": {
+            "type": "string",
+            "knownValues": [
+              "com.example.green",
+              "com.example.yellow",
+              "com.example.red"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+## 版本控制
+
+一旦模式（schema）发布，其约束就不能再更改。放宽约束（添加可能的取值）会导致旧软件无法对新数据进行验证，而收紧约束（移除可能的取值）会导致新软件无法对旧数据进行验证。因此，模式只能为之前未约束的字段添加可选约束。
+
+如果必须更改已发布的约束，应将其作为一个新的模式（schema），在新的 NSID 下发布。
+
+## 模式分发
+
+模式（schemas）被设计为可被机器读取且可通过网络访问。虽然目前并不_强制_要求模式必须在网络上可用，但强烈建议发布模式，以便方法的使用者能够获得唯一的、权威的模式表示。

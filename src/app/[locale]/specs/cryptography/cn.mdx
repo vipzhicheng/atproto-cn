@@ -1,0 +1,78 @@
+export const metadata = {
+  title: '密码学',
+  description:
+    'AT Protocol 中使用的加密系统、曲线和密钥类型',
+}
+
+# 密码学
+
+在整个协议中目前支持两种椭圆曲线，实现方需要完整支持这两种曲线: {{ className: 'lead' }}
+
+- `p256` 椭圆曲线: 也称为 "NIST P-256"、`secp256r1`(注意是`r`)、`prime256v1`
+  - 此曲线已包含在 WebCrypto API 中。它通常受个人设备硬件(可信平台模块(TPM)和移动安全隔区)以及云硬件安全模块(HSM)支持
+- `k256` 椭圆曲线: 也称为 "NIST K-256"、`secp256k1`(注意是`k`)
+  - 此曲线不包含在 WebCrypto API 中。它被用于比特币和其他加密货币中,因此广泛受到个人密钥管理技术的支持。它也受云 HSM 支持。
+
+由于完整曲线名称在视觉上区别很微妙,我们通常将它们简称为 `p256` 或 `k256`。
+
+来自 Bluesky 的 atproto 参考实现在所有场景下都支持这两种曲线,并默认创建 `k256` 密钥对。
+
+两种系统的密钥点都有无损的"压缩"表示形式,这在共享公钥时很有用。对于 `k256` 这通常是原生支持的,但对于 `p256` 有时需要额外的方法或特殊处理。你可以在这里了解更多:[02, 03 或 04? 压缩和未压缩公钥是什么?](https://medium.com/asecuritysite-when-bob-met-alice/02-03-or-04-so-what-are-compressed-and-uncompressed-public-keys-6abcb57efeb6)
+
+在 atproto 中签名数据的常见模式是:将数据编码为 DAG-CBOR,使用 SHA-256 对 CBOR 字节进行哈希运算,得到原始字节(而不是十六进制编码的字符串),然后对哈希字节进行签名。
+
+
+## ECDSA 签名可延展性
+
+某些 ECDSA 签名可以被转换得到一个新的不同但仍然有效的签名。这不需要访问私有签名密钥或被签名的数据。使用此属性可能进行的攻击范围有限,但这是一个意外的属性。
+
+对于 `k256` 特别而言,区别在于"低-S"和"高-S"签名之间,正如 [Bitcoin BIP-0062](https://github.com/bitcoin/bips/blob/master/bip-0062.mediawiki) 中所讨论的。
+
+在 atproto 中,对于 `p256` 和 `k256` 曲线都要求使用"低-S"签名变体。
+
+在 atproto 中,签名应始终使用加密库提供的验证例程进行验证,而不是将签名值作为原始字节进行比较。
+
+
+## 公钥编码
+
+在将公钥编码为字符串时，首选表示方法使用 multibase（特别是 `base58btc`）和 multicode 前缀来指示特定的密钥类型。通过在编码本身中嵌入密钥类型的元数据，它们可以被明确地解析。以这种格式编码公钥的过程是：
+
+- 将公钥曲线"点"编码为字节。确保使用较小的"紧凑"或"压缩"表示形式。这对 `k256` 通常很容易，但对 `p256` 密钥可能需要特殊的参数或配置
+- 在密钥字节前面添加适当的曲线 multicodec 值（作为 varint 编码的字节）：
+  - `p256`（压缩格式，33 字节密钥长度）：`p256-pub`，代码 0x1200，varint 编码字节：[0x80, 0x24]
+  - `k256`（压缩格式，33 字节密钥长度）：`secp256k1-pub`，代码 0xE7，varint 字节：[0xE7, 0x01]
+- 使用 `base58btc` 对组合字节进行编码，并在前面加上 `z` 字符，得到 multibase 编码的字符串
+
+解码过程与此相反，使用已识别的曲线类型作为上下文。
+
+要将密钥编码为 `did:key` 标识符，使用上述 multibase 编码，并添加 ASCII 前缀 `did:key:`。该标识符作为 DID PLC 方法中的内部实现细节使用。
+
+需要注意的是，在 [atproto DID 规范文档](/specs/did) 中描述了一个遗留的 multibase 编码变体，它不包含 multicodec 类型值，并使用密钥的未压缩字节编码。该格式已被弃用。
+
+### 编码示例
+
+以下是一个 P-256 公钥，分别以 multibase（带 multicodec）和 `did:key` 格式编码：
+
+
+```
+zDnaembgSGUhZULN2Caob4HLJPaxBh92N7rtH21TErzqf8HQo
+did:key:zDnaembgSGUhZULN2Caob4HLJPaxBh92N7rtH21TErzqf8HQo
+```
+
+以下是一个 K-256 公钥，分别以 multibase（带 multicodec）和 `did:key` 格式编码：
+
+
+```
+zQ3shqwJEJyMBsBXCWyCBpUBMqxcon9oHB7mCvx4sSpMdLJwc
+did:key:zQ3shqwJEJyMBsBXCWyCBpUBMqxcon9oHB7mCvx4sSpMdLJwc
+```
+
+## 使用和实现指南
+
+在整个 atproto 生态系统中，对于私钥没有特定推荐的字节或字符串编码方式。有时使用简单的十六进制编码，有时使用带或不带 multicodec 类型信息的 multibase 编码。
+
+
+## 可能的未来变化
+
+支持的加密系统集合预计会缓慢演进。在任何时候保持尽可能少的系统数量都能带来显著的互操作性和实现优势。
+

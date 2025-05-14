@@ -1,0 +1,235 @@
+import {Container} from "@/components/Container"
+import {FooterCTA} from "@/components/FooterCTA"
+import image1 from "./image1.png"
+import image2 from "./image2.png"
+import image3 from "./image3.png"
+import image4 from "./image4.png"
+import image5 from "./image5.png"
+import image6 from "./image6.png"
+import image7 from "./image7.png"
+import image8 from "./image8.png"
+import image9 from "./image9.png"
+import image10 from "./image10.png"
+import image11 from "./image11.png"
+import image12 from "./image12.png"
+import image13 from "./image13.png"
+import image14 from "./image14.png"
+import image15 from "./image15.png"
+import image16 from "./image16.png"
+import image17 from "./image17.png"
+import image18 from "./image18.png"
+import image19 from "./image19.png"
+import image20 from "./image20.png"
+import image21 from "./image21.png"
+import image22 from "./image22.png"
+import image23 from "./image23.png"
+import image24 from './image24.png'
+
+export const metadata = {
+  title: 'ATProto 面向分布式系统工程师',
+  description:
+    'AT Protocol 是 Bluesky 开发的开放社交网络协议技术。在本文中，我们将从分布式后端工程的角度探讨 AT Protocol。',
+}
+
+# ATProto 面向分布式系统工程师
+
+*2024年9月3日*
+
+AT Protocol 是由 [Bluesky](https://bsky.app) 开发的开放社交网络协议。在本文中，我们将从分布式后端工程的角度探讨 ATProto。{{className: 'lead'}}
+
+如果你曾经构建过基于 [流处理](https://milinda.pathirage.org/kappa-architecture.com/) 的后端系统，那么你会熟悉我们将要探讨的系统。如果你不熟悉 — 没问题！我们将一步步解释。{{className: 'lead'}}
+
+## 扩展传统 Web 后端
+
+经典的、理想的 Web 架构是我们的应用服务器背后有一个“单一的 SQL 数据库”。应用程序与数据库通信并处理前端的请求。
+
+<Container>
+  <Image src={image1} alt="" className="w-full dark:invert max-w-md mx-auto" />
+</Container>
+
+随着应用程序的增长，我们会遇到一些性能瓶颈，所以我们在架构中添加了一些缓存。
+
+<Container>
+  <Image src={image2} alt="" className="w-full dark:invert max-w-2xl mx-auto" />
+</Container>
+
+接着，假设我们通过分片和复制来水平扩展我们的数据库。
+
+<Container>
+  <Image src={image3} alt="" className="w-full dark:invert max-w-xl mx-auto" />
+</Container>
+
+这样还不错，但我们在构建一个拥有数亿用户的社交网络；即使是这个模型也会达到限制。问题在于我们的 SQL 数据库是“[强一致性](https://en.wikipedia.org/wiki/Strong_consistency)”的，这意味着系统中的状态会保持一致同步。维持强一致性需要付出性能成本，成为我们的瓶颈。
+
+如果我们能放宽系统，使用“[最终一致性](https://en.wikipedia.org/wiki/Eventual_consistency)”，我们可以扩展得更远。我们首先转向 NoSQL 集群。
+
+<Container>
+  <Image src={image4} alt="" className="w-full dark:invert max-w-lg mx-auto" />
+</Container>
+
+这对扩展性更好，但没有 SQL 变得越来越难以构建查询。事实证明，SQL 数据库有很多有用的特性，比如 JOIN 和聚合查询。实际上，我们的 NoSQL 数据库其实只是一个键值存储。编写功能变得很麻烦！
+
+为了解决这个问题，我们需要编写程序，生成我们数据集的预计算视图。这些视图本质上就像是缓存查询。我们甚至会将标准数据复制到这些视图中，以提高访问速度。
+
+我们将这些视图服务器称为“View 服务器”。
+
+<Container>
+  <Image src={image5} alt="" className="w-full dark:invert" />
+</Container>
+
+现在我们发现，让 View 服务器与 NoSQL 集群中的标准数据保持同步是很棘手的。有时我们的 View 服务器会崩溃并错过更新。我们需要确保这些视图始终保持可靠的最新状态。
+
+为了解决这个问题，我们引入了一个事件日志（如 [Kafka](https://kafka.apache.org/)）。该日志记录并广播 NoSQL 集群中的所有更改。我们的 View 服务器监听并重放这个日志，以确保它们不会错过任何更新，即使它们需要重启。
+
+<Container>
+  <Image src={image6} alt="" className="w-full dark:invert" />
+</Container>
+
+我们现在已经构建了一个 [流处理架构](https://milinda.pathirage.org/kappa-architecture.com/)，虽然我们可以讨论更多细节，但现在这些已经足够了。
+
+好消息是，这种架构扩展性很好。我们放弃了强一致性，有时我们的读取查询会滞后于最新的数据版本，但服务不会丢失写入或进入错误的状态。
+
+从某种意义上说，我们做的事情相当于是定制了一个数据库，通过 [反转它](https://www.youtube.com/watch?v=fU9hR3kiOK0)。我们将标准存储简化为一个 NoSQL 集群，然后用 View 服务器构建了自己的查询引擎。虽然构建起来不那么方便，但它扩展性强。
+
+## 去中心化我们的高规模后端
+
+AT Protocol 的目标是让应用程序互联互通，使它们的后端共享状态，包括用户账户和内容。
+
+我们该如何实现呢？看看我们的架构图，我们可以看到大部分系统都与外部世界隔离，只有应用服务器提供公共接口。
+
+<Container>
+  <Image src={image7} alt="" className="w-full dark:invert" />
+</Container>
+
+我们的目标是打破这种隔离，让其他人能够加入我们的 NoSQL 集群、事件日志、View 服务器等。
+
+它的表现形式将是这样的：
+
+<Container>
+  <Image src={image8} alt="" className="w-full dark:invert" />
+</Container>
+
+这些内部服务现在变成了外部服务。它们有公共 API，任何人都可以使用。更重要的是，任何人都可以创建这些服务的实例。
+
+我们的目标是让任何人都能为这个去中心化的后端做出贡献。这意味着我们不仅仅希望有一个 NoSQL 集群，或者一个 View 服务器。我们希望有很多这样的服务器协同工作。所以它实际上应该是这样的：
+
+<Container>
+  <Image src={image9} alt="" className="w-full dark:invert" />
+</Container>
+
+那么，如何使这些服务协同工作呢？
+
+## 统一数据模型
+
+我们将建立一个共享的数据模型，称为 [“用户数据仓库”](/guides/data-repos)。
+
+<Container>
+  <Image src={image10} alt="" className="w-full dark:invert max-w-72 mx-auto" />
+</Container>
+
+每个数据仓库包含 JSON 文档，我们将其称为“记录”。
+
+<Container>
+  <Image src={image11} alt="" className="w-full dark:invert max-w-lg mx-auto" />
+</Container>
+
+为了便于组织，我们将这些记录分成“集合”。
+
+<Container>
+  <Image src={image12} alt="" className="w-full dark:invert max-w-lg mx-auto" />
+</Container>
+
+现在我们将对 NoSQL 服务进行规范化，使它们都使用这种 [数据仓库](/guides/data-repos) 模型。
+
+<Container>
+  <Image src={image13} alt="" className="w-full dark:invert" />
+</Container>
+
+请记住：数据仓库服务仍然基本是 NoSQL 存储，只不过它们现在以非常特定的方式组织：
+
+1. 每个用户都有一个数据仓库。
+2. 每个仓库有集合。
+3. 每个集合是一个有序的 K/V 存储的 JSON 文档。
+
+由于数据仓库可以由任何人托管，我们需要为它们提供 [URLs](/specs/at-uri-scheme)。
+
+<Container>
+  <Image src={image14} alt="" className="w-full dark:invert max-w-72 mx-auto" />
+</Container>
+
+同时，我们为这些记录创建一个 [完整的 URL 方案](/specs/at-uri-scheme)。
+
+<Container>
+  <Image src={image15} alt="" className="w-full dark:invert max-w-lg mx-auto" />
+</Container>
+
+太好了！另外，由于我们将要在互联网上同步这些记录，最好使用加密签名来确保它们的真实性。
+
+<Container>
+  <Image src={image16} alt="" className="w-full dark:invert max-w-lg mx-auto" />
+</Container>
+
+## 绘制数据流
+
+现在我们已经搭建好了高规模的去中心化后端，让我们绘制一个应用程序如何在 ATProto 上运行的图示。
+
+既然我们正在构建一个新应用，我们需要两个东西：一个应用服务器（托管我们的 API 和前端）和一个 View 服务器（从网络中收集数据）。我们通常将应用服务器和 View 服务器打包在一起，所以我们可以称之为“Appview”。从这里开始：
+
+<Container>
+  <Image src={image17} alt="" className="w-full dark:invert max-w-md mx-auto" />
+</Container>
+
+用户通过 OAuth 登录到我们的应用。在这个过程中，他们告诉我们哪个服务器托管他们的数据仓库，并且他们授权我们读取和写入数据。
+
+<Container>
+  <Image src={image18} alt="" className="w-full dark:invert max-w-md mx-auto" />
+</Container>
+
+一切进展顺利 — 我们可以在用户的仓库中读取和写入 JSON 文档。如果他们已经有来自其他应用的数据（比如个人资料），我们也可以读取这些数据。如果我们构建的是单机应用，我们可以已经完成了。
+
+但让我们看看写入一个 JSON 文档时会发生什么。
+
+<Container>
+  <Image src={image19} alt="" className="w-full dark:invert max-w-xl mx-auto" />
+</Container>
+
+这会将文档提交到仓库，然后触发一次写入到事件日志
+
+
+，事件日志会监听仓库的变化。
+
+<Container>
+  <Image src={image20} alt="" className="w-full dark:invert" />
+</Container>
+
+接下来，事件会被发送到任何正在监听的 View 服务，包括我们自己的！
+
+<Container>
+  <Image src={image21} alt="" className="w-full dark:invert" />
+</Container>
+
+为什么我们要监听事件流？因为我们不是唯一一个进行写入的人！有很多用户仓库在生成事件，很多应用在向它们写入数据！
+
+<Container>
+  <Image src={image22} alt="" className="w-full dark:invert max-w-lg mx-auto" />
+</Container>
+
+因此，我们可以看到，在我们的去中心化后端中，数据流呈现出一种循环模式，写入数据提交到数据仓库，然后通过事件日志传递到 View 服务器，再由应用程序读取。
+
+<Container>
+  <Image src={image23} alt="" className="w-full dark:invert" />
+</Container>
+
+并且（我们希望）这个网络能够继续扩展，不仅仅是为了增加容量，而是为了创造一个更加多样化的共享应用程序网络。
+
+<Container>
+  <Image src={image24} className="w-full dark:invert max-w-2xl" />
+</Container>
+
+## 构建实用的开放系统
+
+AT Protocol 将 P2P 技术与高规模系统实践结合在一起。我们的创始工程师是 [IPFS](https://en.wikipedia.org/wiki/InterPlanetary_File_System) 和 [Dat](https://en.wikipedia.org/wiki/Dat_%28software%29) 的核心工程师，Martin Kleppmann — 《数据密集型应用设计》一书的作者 — 是我们的技术顾问。
+
+在 Bluesky 创立之前，我们确立了一个明确的要求：“不退步”。我们希望网络的使用体验像所有社交应用一样便捷和全球化，同时又能作为一个开放网络运作。这就是为什么当我们查看联邦化和区块链时，那些架构的扩展限制对我们来说很突出。我们的解决方案是将高规模后端的标准实践与 P2P 系统中的技术相结合，创造一个开放的网络。
+
+<FooterCTA href="/" title="准备好了解更多了吗？" description="规范、指南和 SDK 可以在这里找到。" />

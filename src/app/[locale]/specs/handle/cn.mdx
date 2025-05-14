@@ -1,0 +1,188 @@
+export const metadata = {
+  title: 'Handle',
+  description:
+    '面向人类友好的账户标识符规范。',
+}
+
+# Handle（标识符）
+
+DID 是 atproto 中账户的长期持久标识符,但它们对人类使用来说可能显得晦涩难懂。Handle 是账户的一种不那么永久的标识符。验证账户 handle 和账户 DID 之间联系的机制依赖于 DNS,可能还需要连接到网络主机,所以每个 handle 必须是一个有效的网络主机名。几乎每个有效的"主机名"也是一个有效的 handle,但也有少数例外情况。{{ className: 'lead' }}
+
+"主机名"的定义(作为所有可能的"DNS 名称"的一个子集)随着时间的推移在多个 RFC 中演变。一些相关文档包括 [RFC-1035](https://www.rfc-editor.org/rfc/rfc1035)、[RFC-3696](https://www.rfc-editor.org/rfc/rfc3696) 第 2 章和 [RFC-3986](https://www.rfc-editor.org/rfc/rfc3986) 第 3 章。{{ className: 'lead' }}
+
+## Handle 标识符语法
+
+Lexicon 字符串格式类型: `handle`
+
+为了综合其他标准,并专门定义"handle"语法:
+
+- handle 总体必须仅包含 ASCII 字符,最多可以有 253 个字符长(实际上,handle 可能被限制为略短的长度)
+- 整个 handle 被分成多个由 ASCII 句点(`.`)分隔的段(在标准文档中称为"标签")
+- 不允许以 ASCII 句点开头或结尾,并且必须至少有两个段。也就是说,"裸"顶级域名不允许作为 handle,即使它们是有效的"主机名"和"DNS 名称"。DNS 名称的"尾随点"语法在 handle 中是不允许的
+- 每段必须至少有 1 个字符且最多 63 个字符(不包括句点)。允许的字符是 ASCII 字母(`a-z`)、数字(`0-9`)和连字符(`-`)
+- 段不能以连字符开头或结尾
+- 最后一段(即"顶级域名")不能以数字开头
+- handle 不区分大小写,应该规范化为小写(即将 ASCII `A-Z` 规范化为 `a-z`)
+
+为了明确起见(上述规则已经指定),handle 中不允许使用空格、空字节、连接字符或其他 ASCII 控制字符,包括作为前缀/后缀。
+
+现代"主机名"(因此也包括 handle)允许在大多数位置使用 ASCII 数字,但最后一段(顶级域名,TLD)不能以数字开头。
+
+IP 地址不是有效的语法:IPv4 地址的最后一段以数字开头,而 IPv6 地址使用冒号(`:`)分隔。
+
+handle 语法的参考正则表达式(regex)为:
+
+```
+/^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/
+```
+
+## 其他非语法限制
+
+"保留"的顶级域名不应在语法验证时失败(例如在 atproto Lexicon 验证中),但必须在任何注册、解析等尝试时立即失败。参见: [https://en.wikipedia.org/wiki/Top-level_domain#Reserved_domains](https://en.wikipedia.org/wiki/Top-level_domain#Reserved_domains)
+
+`.local` 主机名(用于本地网络上的 mDNS)不应在 atproto 中使用。
+
+`.onion` TLD 是 Tor 协议隐藏服务的一个特殊情况。通过 Tor 解析 handle 需要生态系统范围的支持,所以目前是不允许的。
+
+总结一下,初始的不允许的 TLD 列表包括:
+
+- `.alt`
+- `.arpa`
+- `.example`
+- `.internal`
+- `.invalid`
+- `.local`
+- `.localhost`
+- `.onion`
+
+`.test` TLD 用于示例、测试和开发。它可以在 atproto 开发中使用,但在实际环境中应该失败。
+
+`.invalid` TLD 应该只用于特殊的 `handle.invalid` 值(见下文)。这个值在 Lexicon schema 语言中在语法上是有效的,但在大多数情况下不应被接受为有效的 handle。
+
+## 标识符示例
+
+语法上有效的 handle(可能存在或不存在对应的 TLD):
+
+
+```
+jay.bsky.social
+8.cn
+name.t--t        // not a real TLD, but syntax ok
+XX.LCS.MIT.EDU
+a.co
+xn--notarealidn.com
+xn--fiqa61au8b7zsevnm8ak20mc4a87e.xn--fiqs8s
+xn--ls8h.test
+example.t        // not a real TLD, but syntax ok
+```
+
+无效语法:
+
+```
+jo@hn.test
+💩.test
+john..test
+xn--bcher-.tld
+john.0
+cn.8
+www.masełkowski.pl.com
+org
+name.org.
+```
+
+虽然语法正确，但由于其他限制条件必须始终无法解析的 handle：
+
+```
+2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion
+laptop.local
+blah.arpa
+```
+
+## Handle 解析
+
+Handle 在 atproto 中作用有限，在大多数情况下需要解析为 DID。解析机制必须在某个时间点上展示对域名的合理控制权，并且需要具备相对高效的查询能力。目前支持两种解析机制，一种使用包含 DID 的 TXT DNS 记录，另一种是通过特殊的 `/.well-known/` URL 的 HTTPS 访问。
+
+客户端可以依赖网络服务(例如他们的 PDS)通过 `com.atproto.identity.resolveHandle` 端点来解析 handle，通常不需要直接实现解析。
+
+DNS TXT 方法是推荐的、首选的单个 handle 配置解析方法，但是服务应该完整支持这两种方法。HTTPS 方法的预期用例是现有的大规模 Web 服务，这些服务可能没有基础设施来自动注册成千上万个 DNS TXT 记录。
+
+在 DID 也被解析并且确认当前的 DID 文档链接回 handle 之前，不应信任或认为 handle 是有效的。handle 和 DID 之间的链接必须双向确认，否则任何人都可以为第三方账户创建 handle 别名。
+
+### DNS TXT 方法
+
+对于这种解析方法，需要在 handle 主机名下的 `_atproto` 子域注册一个 DNS TXT 记录。记录值应该有 `did=` 前缀，后跟完整的域名。这种方法与 [RFC-1464](https://www.rfc-editor.org/rfc/rfc1464.html) "使用域名系统存储任意字符串属性" 保持一致。
+
+例如，handle `bsky.app` 会在 `_atproto.bsky.app` 名称上有一个 TXT 记录，其值看起来像 `did=did:plc:z72i7hdynmk6r22z27h6tvur`。
+
+任何不以 `did=` 开头的 TXT 记录值都应被忽略。在任何时间点只应存在一个有效记录。如果存在多个具有不同 DID 的有效记录，解析应该失败。在这种情况下，可以在延迟后重新尝试解析，或使用递归解析器。
+
+注意，如果额外的 `_atproto.` 名称段将整体名称推到超过 DNS 查询的 253 字符最大限制，则无法使用此方法解析非常长的 handle。HTTPS 方法可以用于这种 handle。
+
+不需要 DNSSEC。
+
+### HTTPS well-known 方法
+
+对于这种解析方法，handle 域上的 web 服务器在路径 `/.well-known/atproto-did` 实现一个特殊的 well-known 端点。有效的 HTTP 响应将具有 HTTP 成功状态(2xx)，`Content-Type` 头设置为 `text/plain`，并在 HTTP body 中包含 DID，没有前缀或包装格式。
+
+例如，handle `bsky.app` 将通过对 `https://bsky.app/.well-known/atproto-did` 的 GET 请求进行解析，有效响应看起来像：
+
+
+```
+HTTP/1.1 200 OK
+Content-Length: 33
+Content-Type: text/plain
+Date: Wed, 14 Jun 2023 00:47:21 GMT
+
+did:plc:z72i7hdynmk6r22z27h6tvur
+
+```
+
+响应的 `Content-Type` header 不需要严格验证。
+
+在尝试解析为 DID 之前,可以去除响应内容前后的空白。
+
+所有实际环境中的 handle 解析都必须使用默认端口(443)的安全 HTTPS。HTTP 应该只用于本地开发和测试。
+
+允许 HTTP 重定向(例如 301、302),最多可以有合理数量的重定向跳转。
+
+### 无效的 Handle
+
+如果已知 DID 的 handle 被确认不再解析,应将其标记为无效。在 API 响应中,可以使用特殊的 handle 值 `handle.invalid` 来表示给定 DID 没有双向有效的 handle。这个 handle 在大多数情况下不能使用(搜索查询、API 请求等)。
+
+### 解析最佳实践
+
+可以并行尝试两种解析方法,使用最先获得的成功结果。如果两种方法返回冲突的结果(即不同的 DID),应该优先使用 DNS TXT 结果,但将结果记录为模糊并稍后重试也是可以接受的。
+
+服务最好在内部缓存 handle 解析结果,设置一定的生命周期,并定期重新解析。DNS TTL 值提供了一个可能的缓存生命周期,但对于 handle 解析用例来说可能太激进(即生命周期太短)。
+
+使用递归 DNS 解析器可以帮助处理传播延迟,这对于账户更改 handle 并等待确认的用例很重要。
+
+对于这两种技术,从相对可信的网络环境和配置发起解析请求是有益的。从多个区域和环境运行解析请求可以帮助减轻(但不能完全解决)对流量操作或有意分段响应的担忧。
+
+## 使用和实现指南
+
+在用户界面中,handle 可以加上"at"符号作为前缀(如 `@jay.bsky.team`),但这在记录、API 和其他后端上下文中不是有效的 handle 语法。
+
+国际化域名("IDN"或"punycode")与低级 handle 语法没有直接关系。在编码形式下,IDN 已经是有效的主机名,因此是有效的 handle。这些 handle 必须以编码的 ASCII 形式存储和传输。看起来"像"IDN 但无法解析为有效 IDN 的 handle 也是有效的,就像它们是有效的主机名一样。应用程序可以选择性地解析并以 Unicode 显示 IDN handle。
+
+Handle 不区分大小写,这意味着可以安全地将用户输入规范化为小写(ASCII)形式。在记录中存储或在外部 API 调用中使用时,应该只使用规范化(小写)的 handle。应用程序不应保留用户提供的大小写信息,也不应尝试以小写以外的方式显示 handle。例如,handle 输入字符串 `BlueskyWeb.xyz` 应该被规范化、存储和显示为 `blueskyweb.xyz`。长的全小写 handle 可能会带来可读性和可访问性挑战。子域分隔(句点)、连字符或在应用程序协议中使用"显示名称"都可以有所帮助。
+
+虽然已知很长的 handle 会带来用户界面挑战,但它们在协议中是允许的,应用程序开发人员应该支持它们。
+
+看起来类似于知名域名的 handle 会带来安全和冒充的挑战。例如,像 `paypa1.com` 或 `paypal.cc` 这样的 handle 可能会被误认为是 `paypal.com`。当在开头或结尾截断时,很长的 handle 也可能导致类似的问题(`paypal.com…`)。
+
+Handle 通常不应在本地上下文中截断。例如,即使在 `bsky.social` 服务的本地上下文中,handle `@jay.bsky.social` 也不应显示为 `@jay`。
+
+handle "命名空间"(例如,在注册域名上的子域)的提供者可以对 handle 施加任何额外的限制。建议将允许的段长度限制在合理范围内,并保留一组常见的段字符串,如 `www`、`admin`、`mail` 等。有多个"常见禁用用户名"的公开列表可以作为起点。
+
+从实际角度来看,handle 应该限制在最多 244 个字符,少于 DNS 名称允许的 253 个字符。这是因为 DNS 验证使用前缀 `_atproto.`,增加了 9 个字符,整体名称需要保持有效。
+
+Handle 主机名预期是主流 DNS 域名,通过主流 DNS 名称系统注册。具有非标准 TLD 或使用非标准命名系统的 handle 将无法与 atproto 生态系统中的其他网络服务和协议实现互操作。
+
+如果账户的 handle 不能再被验证(即 `handle.invalid` 情况),托管该账户的 PDS 实现*可能*会阻止 repo 变更。其他网络服务通常应该继续显示内容(以防止中断),可能会附带上下文说明或警告指示。
+
+## 可能的未来变更
+
+Handle 语法相对稳定。
+
+未来可能会允许 `.onion` handle。

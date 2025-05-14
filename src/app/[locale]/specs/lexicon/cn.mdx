@@ -1,0 +1,431 @@
+export const metadata = {
+  title: 'Lexicon',
+  description:
+    '一种模式定义语言。',
+}
+
+# Lexicon
+
+Lexicon 是一种用于描述 atproto 记录、HTTP 端点(XRPC)和事件流消息的模式定义语言。它建立在 atproto [数据模型](/specs/data-model)之上。{{ className: 'lead' }}
+
+该模式语言类似于 [JSON Schema](http://json-schema.org/) 和 [OpenAPI](https://en.wikipedia.org/wiki/OpenAPI_Specification),但包含一些 atproto 特定的特性和语义。{{ className: 'lead' }}
+
+本规范描述了 Lexicon 定义语言的版本 1。{{ className: 'lead' }}
+
+## 类型概述
+
+| Lexicon 类型 | 数据模型类型 | 分类 |
+| --- | --- | --- |
+| `null` | Null | 具体类型 |
+| `boolean` | Boolean | 具体类型 |
+| `integer` | Integer | 具体类型 |
+| `string` | String | 具体类型 |
+| `bytes` | Bytes | 具体类型 |
+| `cid-link` | Link | 具体类型 |
+| `blob` | Blob | 具体类型 |
+| `array` | Array | 容器类型 |
+| `object` | Object | 容器类型 |
+| `params` |  | 容器类型 |
+| `token` |  | 元类型 |
+| `ref` |  | 元类型 |
+| `union` |  | 元类型 |
+| `unknown` |  | 元类型 |
+| `record` |  | 主要类型 |
+| `query` |  | 主要类型 |
+| `procedure` |  | 主要类型 |
+| `subscription` |  | 主要类型 |
+
+## Lexicon 文件
+
+Lexicon 文件是与单个 NSID 关联的 JSON 文件。一个文件包含一个或多个 definition(定义)，每个定义都有一个不同的短名称。名为 `main` 的定义可选地描述整个文件的"主要"定义。没有定义的 Lexicon 文件是无效的。
+
+Lexicon JSON 文件是一个包含以下字段的对象:
+
+- `lexicon` (整数, 必需): 表示 Lexicon 语言版本。在本版本中,固定值为 `1`
+- `id` (字符串, 必需): Lexicon 的 NSID
+- `description` (字符串, 可选): Lexicon 的简要概述,通常为一两句话
+- `defs` (字符串到对象的映射, 必需): 一组定义,每个定义都有一个不同的名称(key)
+
+`defs` 下的 schema 定义都有一个 `type` 字段来区分其类型。一个文件最多可以有一个"主要"类型的定义。主要类型应该始终使用名称 `main`。`main` 也可以描述非主要类型。
+
+Lexicon 内特定定义的引用使用片段语法,如 `com.example.defs#someView`。如果存在 `main` 定义,可以不使用片段而仅使用 NSID 来引用它。对于数据对象本身(如记录或 union 的内容)中的 `$type` 字段,这是"必须的"(使用 `#main` 后缀是无效的)。例如, `com.example.record` 而不是 `com.example.record#main`。
+
+相关的 Lexicon 通常在 NSID 层次结构中组合在一起。按照惯例,任何被多个 Lexicon 使用的定义都在组内的专用 `*.defs` Lexicon(如 `com.atproto.server.defs`)中定义。`*.defs` Lexicon 通常不应包含名为 `main` 的定义,尽管这样做并不严格无效。
+
+## 主要类型定义
+
+主要类型包括:
+
+- `query`: 描述 XRPC Query (HTTP GET)
+- `procedure`: 描述 XRPC Procedure (HTTP POST)
+- `subscription`: Event Stream (WebSocket)
+- `record`: 描述可以存储在 repository 记录中的对象
+
+每个主要定义的 schema 对象都包含这些字段:
+
+- `type` (字符串, 必需): 类型值(例如, records 的 `record`)
+- `description` (字符串, 可选): 简短描述,通常只有一两句话
+
+### Record
+
+类型特定字段:
+
+- `key` (字符串, 必需): 指定 [Record Key 类型](/specs/record-key)
+- `record` (对象, 必需): 类型为 `object` 的 schema 定义,用于指定这种类型的记录
+
+### Query 和 Procedure (HTTP API)
+
+类型特定字段:
+
+- `parameters` (对象, 可选): 类型为 `params` 的 schema 定义,描述此端点的 HTTP 查询参数
+- `output` (对象, 可选): 描述 HTTP 响应体
+  - `description` (字符串, 可选): 简短描述
+  - `encoding` (字符串, 必需): 主体内容的 MIME 类型。对于 JSON 响应使用 `application/json`。
+  - `schema` (对象, 可选): schema 定义,可以是 `object`、`ref` 或 refs 的 `union`。用于描述 JSON 编码的响应,但即使是 JSON 响应也可以不指定 schema。
+- `input` (对象, 可选, 仅用于 `procedure`): 描述 HTTP 请求体 schema,格式与 `output` 字段相同
+- `errors` (对象数组, 可选): 可能返回的字符串错误代码集合
+  - `name` (字符串, 必需): 错误类型的短名称,不包含空格
+  - `description` (字符串, 可选): 简短描述,一两句话
+
+### Subscription (事件流)
+
+类型特定字段:
+
+- `parameters` (对象, 可选): 与 Query 和 Procedure 相同
+- `message` (对象, 可选): 指定可能的消息内容
+  - `description` (字符串, 可选): 简短描述
+  - `schema` (对象, 必需): schema 定义,必须是 refs 的 `union`
+- `errors` (对象数组, 可选): 与 Query 和 Procedure 相同
+
+Subscription schemas (由 `message` 下的 `schema` 字段引用)必须是 refs 的 `union`,而不能是 `object` 类型。
+
+## 字段类型定义
+
+与主要定义一样,每个 schema 对象都包含以下字段:
+
+- `type` (字符串, 必需): 每种类型的固定值
+- `description` (字符串, 可选): 简短描述,通常只有一到两句话
+
+### `null`
+
+无额外字段。
+
+### `boolean`
+
+类型特定字段:
+
+- `default` (布尔值, 可选): 该字段的默认值
+- `const` (布尔值, 可选): 该字段的固定(常量)值
+
+当作为 HTTP 查询参数包含时,应呈现为 `true` 或 `false` (无引号)。
+
+### `integer`
+
+一个有符号整数。
+
+类型特定字段:
+
+- `minimum` (整数, 可选): 最小可接受值
+- `maximum` (整数, 可选): 最大可接受值
+- `enum` (整数数组, 可选): 允许值的封闭集合
+- `default` (整数, 可选): 该字段的默认值
+- `const` (整数, 可选): 该字段的固定(常量)值
+
+### `string`
+
+类型特定字段:
+
+- `format` (字符串, 可选): 字符串格式限制
+- `maxLength` (整数, 可选): UTF-8 字节的最大值长度
+- `minLength` (整数, 可选): UTF-8 字节的最小值长度
+- `maxGraphemes` (整数, 可选): Unicode 字素簇计数的最大值长度
+- `minGraphemes` (整数, 可选): Unicode 字素簇计数的最小值长度
+- `knownValues` (字符串数组, 可选): 该字段的建议或常用值集合。值不限于此集合(即非封闭枚举)。
+- `enum` (字符串数组, 可选): 允许值的封闭集合
+- `default` (字符串, 可选): 该字段的默认值
+- `const` (字符串, 可选): 该字段的固定(常量)值
+
+字符串是 Unicode。对于非 Unicode 编码,使用 `bytes` 代替。基本的 `minLength`/`maxLength` 验证约束按 UTF-8 字节计数。请注意,Javascript 默认使用 UTF-16 存储字符串,需要重新编码才能准确计数。`minGraphemes`/`maxGraphemes` 验证约束使用字素簇,这有复杂的技术和语言定义,但大致对应于"不同的视觉字符",如拉丁字母、CJK 字符、标点符号、数字或表情符号(可能包含多个 Unicode 码点和许多 UTF-8 字节)。
+
+`format` 限制字符串格式并提供额外的语义上下文。请参阅数据模型规范以了解可用的格式类型及其定义。
+
+`const` 和 `default` 是互斥的。
+
+### `bytes`
+
+类型特定字段:
+
+- `minLength` (整数, 可选): 作为原始字节且无编码的最小值大小
+- `maxLength` (整数, 可选): 作为原始字节且无编码的最大值大小
+
+### `cid-link`
+
+无类型特定字段。
+
+有关 CID 限制,请参阅[数据模型规范](/specs/data-model)。
+
+### `array`
+
+类型特定字段:
+
+- `items` (对象, 必需): 描述此数组的 schema 元素
+- `minLength` (整数, 可选): 数组中元素的最小计数
+- `maxLength` (整数, 可选): 数组中元素的最大计数
+
+理论上数组具有同质类型(意味着每个元素具有相同类型)。但是,由于 union 类型的存在,这种限制是没有意义的,因此实现不能假定所有元素都具有相同类型。
+
+### `object`
+
+可以通过引用嵌套在其他定义中的通用对象 schema。
+
+类型特定字段:
+
+- `properties` (字符串到对象的映射, 必需): 按名称定义属性(字段),每个属性都有自己的 schema
+- `required` (字符串数组, 可选): 指示哪些属性是必需的
+- `nullable` (字符串数组, 可选): 指示哪些属性可以有 `null` 作为值
+
+如数据模型规范所述,数据中存在语义差异:省略字段;包含值为 `null` 的字段;以及包含具有"假值"(`false`、`0`、空数组等)的字段。
+
+### `blob`
+
+类型特定字段:
+
+- `accept` (字符串数组, 可选): 可接受的 MIME 类型列表。每个类型可以以 `*` 结尾作为通配符模式(例如, `image/*`)。使用 `*/*` 表示接受任何 MIME 类型。
+- `maxSize` (整数, 可选): 最大字节大小
+
+### `params`
+
+这是一个仅用于 `query`、`procedure` 和 `subscription` 主要类型的 `parameters` 字段的有限范围类型。这些映射到 HTTP 查询参数。
+
+类型特定字段:
+
+- `required` (字符串数组, 可选): 与 `object` 上的字段语义相同
+- `properties`: 类似于 `object` 下的 properties,但只能包含 `boolean`、`integer`、`string` 和 `unknown` 类型;或这些类型之一的 `array`
+
+注意,与 `object` 不同,`params` 上没有 `nullable` 字段。
+
+### `token`
+
+Token 是仅存在以供按名称引用的空数据值。它们用于定义具有特定含义的值集。`description` 字段应阐明 token 的含义。Token 编码为字符串数据,字符串是对 token 本身的完全限定引用(NSID 后跟可选的片段)。
+
+Token 类似于某些编程语言中"符号"的概念,与字符串、变量、内置关键字或其他标识符不同。
+
+例如,可以定义 token 来表示实体的状态(在状态机中),或枚举类别列表。
+
+无类型特定字段。
+
+### `ref`
+
+类型特定字段:
+
+- `ref` (字符串, 必需): 对另一个 schema 定义的引用
+
+Ref 是在多个位置重用 schema 定义的机制。`ref` 字符串可以是对 Lexicon 类型定义的全局引用(NSID,可选带有 `#` 分隔的名称表示非 `main` 的定义),也可以表示同一 Lexicon 文件中的本地定义(以 `#` 开头的名称)。
+
+### `union`
+
+类型特定字段:
+
+- `refs` (字符串数组, 必需): 对 schema 定义的引用
+- `closed` (布尔值, 可选): 指示 union 是"开放"还是"封闭"。默认为 `false`(开放 union)
+
+Union 表示在 schema 的这个位置可能出现多种可能的类型。引用遵循与 `ref` 相同的语法,允许引用全局或本地 schema 定义。实际数据将针对单个特定类型进行验证:union 不会从多个 schema 中*组合*字段,也不会定义新的*混合*数据类型。不同的类型被称为**变体**。
+
+默认情况下,union 是"开放"的,这意味着 schema 的未来修订可以向 refs 列表添加更多类型(但不能删除类型)。这意味着实现在验证时应该宽容,以防它们没有最新版本的 Lexicon。`closed` 标志(布尔值)可以指示类型集是固定的,将来不能扩展。
+
+允许没有 `refs` 的 `union` schema 定义,类似于 `unknown`,只要 `closed` 标志为 false(默认值)。主要区别是数据必须具有 `$type` 字段。当 `closed` 设置为 true 时,空 refs 列表是无效 schema。
+
+由 union 指向的 schema 定义是对象或具有明确映射到对象的类型,如 `record`。所有变体必须由 CBOR 映射(或 JSON 对象)表示,并且必须包含指示变体类型的 `$type` 字段。由于数据必须是对象,union 不能引用 `token`(它将对应于字符串数据)。
+
+### `unknown`
+
+表示在此位置可以出现任何数据对象,没有特定验证。顶级数据必须是对象(不是字符串、布尔值等)。与所有其他数据类型一样,除非字段专门标记为 `nullable`,否则不允许值 `null`。
+
+数据对象可能包含指示数据 schema 的 `$type` 字段,但这目前不是必需的。顶级数据对象不能具有复合数据类型的结构,如 blob (`$type: blob`) 或 CID link (`$link`)。
+
+数据对象的(嵌套)内容在 atproto 数据模型下仍然必须有效。例如,它不应包含浮点数。嵌套的复合类型(如 blob 和 CID link)应按预期进行验证和转换。
+
+目前强烈建议 Lexicon 设计者不要在 `record` 对象中使用 `unknown` 字段。
+
+无类型特定字段。
+
+## 字符串格式
+
+字符串可以选择性地限制为以下 `format` 类型之一:
+
+- `at-identifier`: [Handle](/specs/handle) 或 [DID](/specs/did),详见下文
+- `at-uri`: [AT-URI](/specs/at-uri-scheme)
+- `cid`: 字符串格式的 CID,详见[数据模型](/specs/data-model)规范
+- `datetime`: 时间戳,详见下文
+- `did`: 通用 [DID 标识符](/specs/did)
+- `handle`: [Handle 标识符](/specs/handle)
+- `nsid`: [命名空间标识符](/specs/nsid)
+- `tid`: [时间戳标识符(TID)](/specs/tid)
+- `record-key`: [记录键](/specs/record-key),符合通用语法("any")
+- `uri`: 通用 URI,详见下文
+- `language`: 语言代码,详见下文
+
+对于各种标识符格式,在进行 Lexicon schema 验证时应允许最宽松的标识符语法格式。通过基本语法验证但存在问题的标识符应该报告为应用程序错误,而不是 lexicon 数据验证错误。例如,在 `did` 格式字符串字段中具有任何类型 DID 的数据都应通过 Lexicon 验证,不支持的 DID 方法应单独作为应用程序错误抛出。
+
+### `at-identifier`
+
+一种字符串类型,可以是 DID (类型: did)或 handle (handle)。主要用于 XRPC 查询参数。由于 DID 总是以 did: 开头,而冒号字符(:)在 handles 中不允许使用,因此 at-identifier 是 handle 还是 DID 是明确的。
+
+### `datetime`
+
+完整精度的日期和时间,带有时区信息。
+
+此格式适用于现代计算时代(例如,UNIX 纪元之后)的计算机生成的时间戳。如果您需要表示历史或古代事件、歧义或远未来的时间,可能更适合使用不同的格式。明确禁止使用公元前(零年之前)的日期时间。
+
+日期时间格式标准出名的灵活且重叠。atproto 中的日期时间字符串应满足 [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339)、[ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) 和 [WHATWG HTML](https://html.spec.whatwg.org/#dates-and-times) 日期时间标准的[交叉](https://ijmacd.github.io/rfc3339-iso8601/)要求。
+
+分隔"日期"和"时间"部分的字符必须是大写 `T`。
+
+必须指定时区。强烈建议使用 UTC 时区,并使用简单的大写 `Z` 后缀表示时区(不允许使用小写)。虽然支持小时/分钟后缀语法(如 `+01:00` 或 `-10:30`),但明确禁止"负零"(`-00:00`)(根据 ISO 8601)。
+
+需要精确到秒,并允许任意小数精度位数。最佳实践是至少使用毫秒精度,并用零填充到生成的精度(例如,尾随 `:12.340Z` 而不是 `:12.34Z`)。并非所有日期时间格式化库都支持尾随零格式化。毫秒和微秒精度都具有合理的跨语言支持;纳秒精度则没有。
+
+实现在往返包含日期时间的记录时应该注意两个歧义:精度损失,以及尾随小数秒零的歧义。如果将 Lexicon 记录反序列化为本机类型,然后重新序列化,字符串表示可能不相同,这可能导致哈希引用损坏、健全性检查失败或存储库更新膨胀。更安全的做法是将日期时间反序列化为简单字符串,这可以确保往返重新序列化。
+
+实现"应该"验证日期时间的语义是否有效。例如,月份或日期 `00` 是无效的。
+
+有效示例:
+
+```text
+# preferred
+1985-04-12T23:20:50.123Z
+1985-04-12T23:20:50.123456Z
+1985-04-12T23:20:50.120Z
+1985-04-12T23:20:50.120000Z
+
+# supported
+1985-04-12T23:20:50.12345678912345Z
+1985-04-12T23:20:50Z
+1985-04-12T23:20:50.0Z
+1985-04-12T23:20:50.123+00:00
+1985-04-12T23:20:50.123-07:00
+```
+
+无效的示例:
+
+```text
+1985-04-12
+1985-04-12T23:20Z
+1985-04-12T23:20:5Z
+1985-04-12T23:20:50.123
++001985-04-12T23:20:50.123Z
+23:20:50.123Z
+-1985-04-12T23:20:50.123Z
+1985-4-12T23:20:50.123Z
+01985-04-12T23:20:50.123Z
+1985-04-12T23:20:50.123+00
+1985-04-12T23:20:50.123+0000
+
+# ISO-8601 strict capitalization
+1985-04-12t23:20:50.123Z
+1985-04-12T23:20:50.123z
+
+# RFC-3339, but not ISO-8601
+1985-04-12T23:20:50.123-00:00
+1985-04-12 23:20:50.123Z
+
+# timezone is required
+1985-04-12T23:20:50.123
+
+# syntax looks ok, but datetime is not valid
+1985-04-12T23:99:50.123Z
+1985-00-12T23:20:50.123Z
+```
+
+### `uri`
+
+灵活支持任何 URI schema,遵循通用的 RFC-3986 URI 规范。包括但不限于:`did`、`https`、`wss`、`ipfs`(用于 CID)、`dns`,当然还包括 `at`。
+Lexicon 中的最大长度为 8 KBytes。
+
+### `language`
+
+[IETF 语言标签](https://en.wikipedia.org/wiki/IETF_language_tag)字符串,符合 [BCP 47](https://www.rfc-editor.org/info/bcp47),在 [RFC 5646](https://www.rfc-editor.org/rfc/rfc5646.txt)("用于标识语言的标签")中定义。这与在 HTTP、HTML 和其他 Web 标准中用于标识语言的标准相同。Lexicon 字符串必须验证为 RFC 中定义的"格式良好"的语言标签。客户端应忽略根据 RFC "格式良好"但不"有效"的语言字符串。
+
+按照 RFC 规范,ISO 639 双字符和三字符语言代码可以独立使用,必须小写,例如 `ja`(日语)或 `ban`(巴厘语)。可以添加区域子标签,如 `pt-BR`(巴西葡萄牙语)。也可以添加额外的子标签,如 `hy-Latn-IT-arevela`。
+
+语言代码通常需要解析、标准化和语义匹配,而不是简单的字符串比较。例如,搜索引擎可能将语言标签简化为 ISO 639 代码以进行索引和过滤,而客户端应用程序(用户代理)会保留完整的语言代码以用于本地呈现(文本渲染)。
+
+## 何时使用 `$type`
+
+数据对象有时包含指示其 Lexicon 类型的 `$type` 字段。一般原则是,只要在验证数据时可能对内容类型产生歧义,就需要包含此字段。
+
+具体规则是:
+
+- `record` 对象必须始终包含 `$type`。虽然类型通常可以从上下文中获知(例如,存储在 repository 中的记录的 collection 路径部分),但记录对象也可能在 repository 之外传递,需要自我描述。
+- `union` 变体必须始终包含 `$type`,除了在 `subscription` 消息的顶层。
+
+请注意,`blob` 对象始终包含 `$type`,这允许通用处理。
+
+提醒一下,`main` 类型在 `$type` 字段中必须只引用 NSID,不包括 `#main` 后缀。
+
+## Lexicon 的演进
+
+Lexicon 允许随时间进行更改,但要在一定范围内确保向前和向后兼容。基本原则是所有旧数据在更新的 Lexicon 下仍然有效,而新数据在旧 Lexicon 下必须有效。
+
+- 任何新字段必须是可选的
+- 不能删除必需字段。最佳实践是在 Lexicon 中保留所有字段,如果不再使用则标记为已弃用。
+- 类型不能更改
+- 字段不能重命名
+
+如果需要更大的破坏性变更,必须使用新的 Lexicon 名称。
+
+Lexicon 何时发布并变为"定型"可能并不明确。至少,第三方的公开采用和实现,即使没有明确许可,也表明该 Lexicon 已发布且不应破坏兼容性。最佳实践是在 Lexicon 类型名称中明确标示任何实验性或开发状态。例如,`com.corp.experimental.newRecord`。
+
+## 权限与控制
+
+Lexicon 的权限由 NSID 决定,并根植于域名权限的 DNS 控制。该权限对 Lexicon 定义有最终控制权,并负责维护和分发 Lexicon schema 定义。
+
+在危机情况下,例如无意中失去 DNS 控制给恶意行为者,协议生态系统可以决定忽略这个权限链。这应该只在特殊情况下进行,而不是作为破坏活动权限的机制。解决协议争议的主要机制是将 Lexicon 分叉到新的命名空间。
+
+协议实现通常应将未能通过 Lexicon 验证的数据视为完全无效,不应尝试修复或对单个数据片段进行部分处理。
+
+符合 Lexicon 但包含意外字段的数据应被忽略。在进行 schema 验证时,这些字段最多应被视为警告。这对于允许控制权限方对 schema 进行演进以及在 Lexicon 过时的情况下保持健壮性是必要的。
+
+第三方技术上可以在数据中插入任何额外字段。这不是扩展应用程序的推荐方式,但也不是特别禁止的。这样做的一个危险是,Lexicon 可能会更新以包含具有相同字段名但不同类型的字段,这将使现有数据无效。
+
+## Lexicon 发布和解析
+
+Lexicon schemas 作为 `com.atproto.lexicon.schema` 类型的记录公开发布在 atproto repositories 中。[NSIDs](/specs/nsid) 的域名权限到特定 atproto repositories(由 [DID](/specs/did) 标识)的链接通过 DNS TXT 记录(`_lexicon`)完成,类似于但不同于 [handle resolution](/specs/handle) 系统。
+
+`com.atproto.lexicon.schema` Lexicon 本身非常简单:它只需要 `lexicon` 整数字段,对于此版本的 Lexicon 语言,该字段必须为 `1`。在实践中,应包含与 [Lexicon Files](#lexicon-files) 相同的字段,以及 `$type`。记录键是 schema 的 NSID。
+
+记录字段摘要:
+
+- `$type`: 必须是 `com.atproto.lexicon.schema`(与所有 atproto 记录一样)
+- `lexicon`: 整数,表示 Lexicon 的整体版本(目前为 `1`)
+- `id`: 此 Lexicon 的 NSID。必须是简单的 NSID(无片段),且必须与记录键匹配
+- `defs`: schema 定义本身,作为对象映射。名称不应包含 `#` 前缀。
+- `description`: 可选的 schema 整体描述;虽然最好在各个 def 上包含描述,而不是整体 schema。
+
+`com.atproto.lexicon.schema` meta-schema 与其他 Lexicon 有所不同,因为它是作为协议的一部分定义和管理的。语言和协议的未来版本可能不遵循演进规则。这是一个有意的决定,不使用 schema 语言本身递归表达 Lexicon schema。
+
+NSID 命名空间的权限是在"组"级别完成的,这意味着仅在最后一个"名称"部分不同的所有 NSID 都发布在同一个 repository 中。NSID 的 Lexicon 解析不是分层的:必须为每个权限部分创建 DNS TXT 记录,解析器不应在 DNS 层次结构中向上或向下递归查找 TXT 记录。
+
+例如,NSID `edu.university.dept.lab.blogging.getBlogPost` 的"名称"是 `getBlogPost`。删除名称并反转 NSID 的其余部分得到"权限域名" `blogging.lab.dept.university.edu`。要将权限链接到特定的 DID(比如 `did:plc:ewvi7nxzyoun6zhxrhs64oiz`),需要创建一个名为 `_lexicon.blogging.lab.dept.university.edu` 且值为 `did=did:plc:ewvi7nxzyoun6zhxrhs64oiz`(注意 `did=` 前缀)的 DNS TXT 记录。然后在该帐户的 repository 中创建一个 collection 为 `com.atproto.lexicon.schema` 且 record-key 为 `edu.university.dept.lab.blogging.getBlogPost` 的记录。
+
+解析服务会从 NSID (`edu.university.dept.lab.blogging.getBlogPost`)开始,对 `_lexicon.blogging.lab.dept.university.edu` 进行 DNS TXT 解析。找到 DID 后,它将进行 atproto DID 解析,寻找 PDS,然后获取相关记录。记录的完整 AT-URI 为 `at://did:plc:ewvi7nxzyoun6zhxrhs64oiz/com.atproto.lexicon.schema/edu.university.dept.lab.blogging.getBlogPost`。
+
+如果 `_lexicon.blogging.lab.dept.university.edu` 的 DNS TXT 解析失败,解析服务将*不会*尝试 `_lexicon.lab.dept.university.edu` 或 `_lexicon.getBlogPost.blogging.lab.dept.university.edu` 或 `_lexicon.university.edu` 或任何其他域名。Lexicon 解析将简单地失败。
+
+如果创建了另一个 NSID `edu.university.dept.lab.blogging.getBlogComments`,它将具有相同的权限名称,并且必须发布在同一个 atproto repository 中(具有不同的记录键)。如果发布了一个 `edu.university.dept.lab.gallery.photo` 的 Lexicon,则需要一个新的 DNS TXT 记录(`_lexicon.gallery.lab.dept.university.edu`;它可以指向同一个 repository(DID),或不同的 repository。
+
+作为一个更简单的例子,NSID `app.toy.record` 将通过 `_lexicon.toy.app` 解析。
+
+一个 repository 可以托管多个权限域的 Lexicon,可能跨越多个注册域和 TLD。解析 DNS 记录可以随时间变化,将 schema 解析移动到不同的 repository,尽管 DNS 和缓存更改可能需要时间传播。
+
+请注意,Lexicon 记录操作通过 repository 事件流("firehose")广播,但 DNS 解析更改不会(与 handle 更改不同)。解析服务不应长时间缓存 DNS 解析结果。
+
+## 使用和实现指南
+
+应该可以将 Lexicon schemas 转换为 JSON Schema 或 OpenAPI,并使用这些生态系统中的工具和库来处理 JSON 格式的 atproto 数据。
+
+从 JSON 或 CBOR 序列化和反序列化数据到特定 Lexicon 派生的结构的实现应意识到"覆盖"意外字段的风险。例如,如果更新 Lexicon 以添加新的(可选)字段,旧的实现将不知道该字段,并可能在反序列化然后重新序列化时意外删除数据。根据上下文,避免此问题的一种方法是保留任何"额外"字段,或传递原始数据对象而不是重新序列化它。
+
+## 可能的未来变更
+
+对意外额外字段的验证规则可能会改变。例如,Lexicon 指示 schema 是"封闭的"且不允许意外字段的机制,或围绕字段名称前缀(`x-`)以指示非官方扩展的约定。

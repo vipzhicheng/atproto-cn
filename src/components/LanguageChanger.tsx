@@ -41,6 +41,7 @@ export default function LanguageChanger() {
       <option value="pt">Português</option>
       <option value="ja">日本語</option>
       <option value="ko">한국어</option>
+      <option value="cn">中文简体</option>
     </select>
   )
 }
