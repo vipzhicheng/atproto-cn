@@ -101,3 +101,65 @@ link 的 JSON 编码是一个具有单个键 `$link` 和字符串编码 CID 作�
 
 例如,具有单个类型为 `link` 的字段 `"exampleLink"` 的节点在 JSON 中会这样编码:
 
+```
+{
+  "exampleLink": {
+    "$link": "bafyreidfayvfuwqa7qlnopdjiqrxzs6blmoeu4rujcjtnci5beludirz2a"
+  }
+}
+
+```
+
+相比之下，这与 DAG-JSON 编码非常相似，但使用 `$link` 作为键名，而非 `/`（单字符正斜杠）。
+
+### `bytes`
+
+`bytes` 的 JSON 编码是一个包含单个键 `$bytes` 的对象，其值为经过 base64 编码的字节字符串。所使用的 base64 方案遵循 [RFC-4648 第 4 节](https://datatracker.ietf.org/doc/html/rfc4648#section-4)，通常称为普通 “base64”。该方案并非 URL 安全的，且 `=` 填充符是可选的。
+
+例如，一个包含单个类型为 `bytes` 的字段 `"exampleBytes"` 的节点，在 JSON 中会这样表示：
+```
+{
+  "exampleBytes": {
+    "$bytes": "nFERjvLLiw9qm45JrqH9QTzyC2Lu1Xb4ne6+sBrCzI0"
+  }
+}
+
+```
+
+
+相比之下，DAG-JSON 编码有两个嵌套对象，外层键为 `/`（单字符正斜杠），内层键为 `bytes`，且使用相同的 base64 编码。
+
+## 链接和 CID 格式
+
+[IPFS CID 规范](https://github.com/multiformats/cid) 非常灵活。它支持多种哈希类型、一个指示所链接内容 “类型” 的字段，以及各种字符串编码选项。这些特性对于随时间演进很有价值，但为了最大限度地提高不同实现之间的互操作性，只允许特定的一组 “推荐” CID 类型。
+
+atproto 中推荐的 CID 格式如下：
+
+- CIDv1
+- 多基编码（multibase）：DAG-CBOR `link` 字段内使用二进制序列化，字符串编码使用 `base32`
+- 多码（multicodec）：链接到数据对象时使用 `dag-cbor` (0x71)，链接到二进制大对象（blobs）时使用 `raw` (0x55)
+- 多哈希（multihash）：首选 256 位的 `sha-256` (0x12)
+
+在某些场景下，如存储库 MST 节点，使用 SHA-256 是一项稳定的要求。在其他场景中，如引用媒体二进制大对象，可能会有一组随着时间演进的 “推荐” 哈希类型。需要在协议灵活性（采用改进的哈希算法并淘汰弱算法）和确保整个协议实现生态系统广泛且一致的互操作性之间取得平衡。
+
+在 atproto 对象中包含 CID 哈希引用有几种方式：
+
+- `link` 字段类型（Lexicon 类型 `cid-link`）。在 DAG-CBOR 中编码为带有 CBOR 标签 42 的字节串中的二进制 CID（多基编码类型 0x00）。在 JSON 中编码为 `$link` 对象（见上文）
+- `string` 字段类型，使用 Lexicon 字符串格式 `cid`。在 DAG-CBOR 和 JSON 中编码为简单字符串
+- `string` 字段类型，使用 Lexicon 字符串格式 `uri`，URI 方案为 `ipld://`
+
+## 使用和实现指南
+
+处理已弃用的旧版 “blob” 格式时，建议将其存储为与常规 “blob” 引用相同的内部表示形式，但将 `size` 设置为零或负值。重新序列化时应检查此字段，以确保正确的往返行为，并避免在正常对象格式中编码零或负的 `size` 值。
+
+## 安全和隐私注意事项
+
+解析不可信的 CBOR 内容时，可能会遭遇多种资源消耗攻击。建议使用能自动防范大量内存分配、深度嵌套、无效引用等问题的库。对于用 C 和 C++ 等内存安全性较弱的语言实现的库来说，这一点尤为重要。请注意，高级语言通常会封装用低级语言编写的解析器。
+
+## 未来可能的变更
+
+可能会以某种形式支持浮点数。
+
+如果所有已知记录和存储库都能重写，旧版 “blob” 格式可能会被完全移除。
+
+“推荐” CID 配置集中可能会纳入更多哈希类型。
